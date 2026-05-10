@@ -19,7 +19,7 @@ export default function LoginPage() {
     // Simulate a slight delay for better UX
     await new Promise(resolve => setTimeout(resolve, 600))
 
-    if (email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
+    if (email === 'saqibbaig110@gmail.com' && password === 'saqibbaig@1100') {
       document.cookie = "stitchbook_auth=authenticated; path=/; max-age=31536000"
       toast.success('Login successful')
       router.push('/')
