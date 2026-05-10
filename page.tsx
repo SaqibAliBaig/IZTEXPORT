@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import toast from 'react-hot-toast'
 import { Lock, Mail, ArrowRight } from 'lucide-react'
 
@@ -34,12 +33,10 @@ export default function LoginPage() {
     <div className="min-h-[80vh] bg-gray-50 flex flex-col justify-center items-center p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border p-8">
         <div className="flex flex-col items-center mb-8 text-center">
-          <Image 
+          <img 
             src="/icon.png" 
             alt="IZTEXPORT Logo" 
-            width={64} 
-            height={64} 
-            className="rounded-xl object-cover mb-4"
+            className="w-16 h-16 rounded-xl object-cover mb-4"
           />
           <h1 className="text-2xl font-bold text-gray-900">Welcome to IZTEXPORT</h1>
           <p className="text-gray-500 text-sm mt-1">Please sign in to continue</p>
