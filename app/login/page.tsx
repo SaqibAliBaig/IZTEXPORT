@@ -35,7 +35,7 @@ export default function LoginPage() {
       <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border p-8">
         <div className="flex flex-col items-center mb-8 text-center">
           <Image 
-            src="/Gemini_Generated_Image_b4mwbsb4mwbsb4mw.png" 
+            src="/icon.png" 
             alt="StitchBook Logo" 
             width={64} 
             height={64} 
