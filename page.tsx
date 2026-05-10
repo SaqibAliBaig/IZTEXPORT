@@ -36,12 +36,12 @@ export default function LoginPage() {
         <div className="flex flex-col items-center mb-8 text-center">
           <Image 
             src="/icon.png" 
-            alt="StitchBook Logo" 
+            alt="IZTEXPORT Logo" 
             width={64} 
             height={64} 
             className="rounded-xl object-cover mb-4"
           />
-          <h1 className="text-2xl font-bold text-gray-900">Welcome to StitchBook</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Welcome to IZTEXPORT</h1>
           <p className="text-gray-500 text-sm mt-1">Please sign in to continue</p>
         </div>
 
