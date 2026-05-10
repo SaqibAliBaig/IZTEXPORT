@@ -223,7 +223,7 @@ export default function AddPurchasePage() {
         related_type: 'purchase',
         related_id: purchase.id,
         entry_date: formData.purchase_date,
-        note: `Purchase: ${formData.meters}m ${formData.cloth_name}`
+        note: `Purchase: ${formData.meters}m ${formData.cloth_name} x ₹${formData.rate_per_meter}/meter`
       })
 
     // Add ledger entry if payment made
@@ -237,7 +237,7 @@ export default function AddPurchasePage() {
           amount: parseFloat(formData.paid_amount),
           payment_date: formData.purchase_date,
           payment_mode: 'cash',
-          note: `Payment for cloth purchase`
+          note: `Payment for cloth purchase: ${formData.meters}m ${formData.cloth_name}`
         })
         .select()
         .single()
@@ -252,7 +252,7 @@ export default function AddPurchasePage() {
             related_type: 'payment',
             related_id: payment.id,
             entry_date: formData.purchase_date,
-            note: 'Payment for purchase'
+            note: `Payment for purchase: ${formData.meters}m ${formData.cloth_name}`
           })
       }
     }

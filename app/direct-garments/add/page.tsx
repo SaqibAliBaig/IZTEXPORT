@@ -128,7 +128,7 @@ export default function AddDirectGarmentsPage() {
         related_type: 'production',
         related_id: production.id,
         entry_date: formData.purchase_date,
-        note: `Direct Garments: ${quantity} ${formData.product_type}`
+        note: `Direct Garments: ${quantity} ${formData.product_type} x ₹${rate}/piece`
       })
 
     // Add payment if made
@@ -157,7 +157,7 @@ export default function AddDirectGarmentsPage() {
             related_type: 'payment',
             related_id: payment.id,
             entry_date: formData.purchase_date,
-            note: `Payment made for direct garments`
+            note: `Payment for direct garments: ${formData.product_type}`
           })
       }
     }

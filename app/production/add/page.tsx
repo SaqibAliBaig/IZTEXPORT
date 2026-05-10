@@ -374,7 +374,7 @@ export default function AddProductionPage() {
         related_type: 'production',
         related_id: production.id,
         entry_date: formData.production_date,
-        note: `Production: ${quantity} ${formData.product_type}`
+        note: `Production: ${quantity} ${formData.product_type} x ₹${rate}/${formData.output_unit === 'pieces' ? 'piece' : formData.output_unit.replace(/s$/, '')}`
       })
 
     // If payment made, record it
@@ -404,7 +404,7 @@ export default function AddProductionPage() {
             related_type: 'payment',
             related_id: payment.id,
             entry_date: formData.production_date,
-            note: `Payment made for production`
+            note: `Payment for production: ${formData.product_type}`
           })
       }
     }

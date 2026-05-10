@@ -420,7 +420,7 @@ export default function PartyStatementPage() {
 
       await supabase.from('ledger_entries').insert({
         party_id: party.id, entry_type: 'credit', amount: totalValue, related_type: 'production',
-        related_id: production.id, entry_date: productionFormData.production_date, note: `Production: ${quantity} ${productionFormData.product_type}`
+        related_id: production.id, entry_date: productionFormData.production_date, note: `Production: ${quantity} ${productionFormData.product_type} x ₹${rate}/${productionFormData.output_unit === 'pieces' ? 'piece' : productionFormData.output_unit.replace(/s$/, '')}`
       })
 
       if (paidNow > 0) {
@@ -432,7 +432,7 @@ export default function PartyStatementPage() {
         if (!payError && payment) {
           await supabase.from('ledger_entries').insert({
             party_id: party.id, entry_type: 'debit', amount: paidNow, related_type: 'payment',
-            related_id: payment.id, entry_date: productionFormData.production_date, note: `Payment made for production`
+            related_id: payment.id, entry_date: productionFormData.production_date, note: `Payment for production: ${productionFormData.product_type}`
           })
         }
       }
@@ -505,7 +505,7 @@ export default function PartyStatementPage() {
           related_type: 'sale',
           related_id: sale.id,
           entry_date: saleFormData.sale_date,
-          note: `Sale: ${quantity} ${saleFormData.product_type} @ ₹${rate} each${saleFormData.note ? ` - ${saleFormData.note}` : ''}`
+          note: `Sale: ${quantity} ${saleFormData.product_type} x ₹${rate}/piece${saleFormData.note ? ` - ${saleFormData.note}` : ''}`
         })
         .select()
         .single()
@@ -761,14 +761,25 @@ export default function PartyStatementPage() {
   const renderNote = (note: string) => {
     if (!note) return '';
     
-    let match = note.match(/^(Sale:\s+\d+\s+)(.+?)(\s+@\s+₹[\d.]+\s+each.*)$/);
-    if (match) {
-      return <>{match[1]}<strong className="text-gray-900 font-bold">{match[2]}</strong>{match[3]}</>;
-    }
-    
-    match = note.match(/^((?:Payment for sale|Payment received for sale):\s+)(.+?)(\s*-.*)?$/);
-    if (match) {
-      return <>{match[1]}<strong className="text-gray-900 font-bold">{match[2]}</strong>{match[3] || ''}</>;
+    const prefixes = [
+      'Production:', 'Purchase:', 'Sale:', 'Direct Garments:',
+      'Payment for sale:', 'Payment received for sale:', 
+      'Payment for production:', 'Payment for purchase:', 'Payment for cloth purchase:',
+      'Payment for direct garments:'
+    ];
+
+    for (const prefix of prefixes) {
+      if (note.toLowerCase().startsWith(prefix.toLowerCase())) {
+        const remaining = note.substring(prefix.length).trim();
+        const parts = remaining.split(' - ');
+        const details = parts[0];
+        const extraNote = parts.length > 1 ? ' - ' + parts.slice(1).join(' - ') : '';
+        return (
+          <>
+            {note.substring(0, prefix.length)} <strong className="text-gray-900 font-bold">{details}</strong>{extraNote}
+          </>
+        );
+      }
     }
 
     return note;
