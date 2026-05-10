@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Search, Package, ArrowUpDown, Shirt, ArrowLeft, X, AlertTriangle } from 'lucide-react'
+import { Search, Package, ArrowUpDown, Shirt, ArrowLeft, X, AlertTriangle, FileText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 
@@ -13,9 +13,11 @@ interface ClothStock {
   meters_purchased: number
   meters_issued: number
   meters_remaining: number
+  note?: string
   purchase: {
     color_image_url: string
     purchase_date: string
+    note?: string
   }
 }
 
@@ -23,7 +25,7 @@ export default function StockPage() {
   const router = useRouter()
   const [stocks, setStocks] = useState<ClothStock[]>([])
   const [productStocks, setProductStocks] = useState<{product_type: string, produced: number, sold: number, quantity: number}[]>([])
-  const [recentSales, setRecentSales] = useState<{id: string, product_type: string, quantity: number, customer_name: string, date: string}[]>([])
+  const [recentSales, setRecentSales] = useState<{id: string, product_type: string, quantity: number, customer_name: string, date: string, note?: string}[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'remaining'>('name')
   const [activeTab, setActiveTab] = useState<'cloth' | 'products'>('cloth')
@@ -44,7 +46,8 @@ export default function StockPage() {
         *,
         purchase:cloth_purchases!cloth_stock_purchase_id_fkey(
           color_image_url,
-          purchase_date
+          purchase_date,
+          note
         )
       `)
       .gt('meters_remaining', 0) // Only show items with remaining stock
@@ -64,7 +67,7 @@ export default function StockPage() {
 
     const { data: sales } = await supabase
       .from('sales')
-      .select('id, product_type, quantity, sale_date, customer_id')
+      .select('id, product_type, quantity, sale_date, customer_id, note')
       .gt('quantity', 0)
       .order('sale_date', { ascending: false })
 
@@ -95,7 +98,7 @@ export default function StockPage() {
       product_type,
       produced,
       sold,
-      quantity: produced - sold
+      quantity: Math.max(0, produced - sold)
     })).sort((a, b) => b.quantity - a.quantity)
 
     setProductStocks(pStocks)
@@ -107,7 +110,8 @@ export default function StockPage() {
         product_type: s.product_type || 'Unknown',
         quantity: Number(s.quantity),
         customer_name: customer?.name || 'Unknown Customer',
-        date: s.sale_date
+        date: s.sale_date,
+        note: s.note
       }
     })
     setRecentSales(recent || [])
@@ -294,7 +298,7 @@ export default function StockPage() {
             </div>
           ) : (
             sortedStocks.map(stock => (
-              <div key={stock.id} className="bg-white rounded-xl border p-4">
+              <div key={stock.id} className="relative group bg-white rounded-xl border p-4 transition-all hover:border-gray-400 hover:shadow-md">
                 <div className="flex items-start gap-4">
                   {/* Thumbnail */}
                   {stock.purchase?.color_image_url ? (
@@ -322,11 +326,16 @@ export default function StockPage() {
                           <p className="text-2xl font-bold text-green-600">
                             {stock.meters_remaining.toFixed(2)}m
                           </p>
-                          <button onClick={() => setClearingStock(stock)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Clear Stock">
+                          <button onClick={() => setClearingStock(stock)} className="relative z-10 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Clear Stock">
                             <X className="w-5 h-5" />
                           </button>
                         </div>
-                        <p className="text-xs text-gray-500">available</p>
+                        <div className="flex items-center justify-end gap-1">
+                          <p className="text-xs text-gray-500">available</p>
+                          {(stock.note || stock.purchase?.note) && (
+                            <FileText className="w-3.5 h-3.5 text-gray-400" />
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -347,6 +356,15 @@ export default function StockPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Tooltip for Note */}
+                {(stock.note || stock.purchase?.note) && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                    <span className="font-semibold text-gray-300">Note:</span> {stock.note || stock.purchase?.note}
+                    {/* Tooltip downward arrow */}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                  </div>
+                )}
               </div>
             ))
           )
@@ -396,7 +414,7 @@ export default function StockPage() {
           <div className="space-y-3">
             {recentSales.length > 0 ? (
               recentSales.map(sale => (
-                <div key={sale.id} className="bg-white rounded-xl border p-4 flex justify-between items-center">
+                <div key={sale.id} className="relative group bg-white rounded-xl border p-4 flex justify-between items-center transition-all hover:border-gray-400 hover:shadow-md">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
                       <Shirt className="w-6 h-6 text-orange-500" />
@@ -410,10 +428,23 @@ export default function StockPage() {
                     <p className="text-xl font-bold text-red-600">
                       -{sale.quantity.toLocaleString('en-IN')}
                     </p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(sale.date).toLocaleDateString()}
-                    </p>
+                    <div className="flex items-center justify-end gap-1 mt-1 text-xs text-gray-400">
+                      <span>{new Date(sale.date).toLocaleDateString()}</span>
+                      {sale.note && (
+                        <FileText className="w-3.5 h-3.5 text-gray-400" />
+                      )}
+                    </div>
                   </div>
+
+                  {/* Tooltip for Note */}
+                  {sale.note && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                      <span className="font-semibold text-gray-300">Note:</span> {sale.note}
+                      {/* Tooltip downward arrow */}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                    </div>
+                  )}
+
                 </div>
               ))
             ) : (

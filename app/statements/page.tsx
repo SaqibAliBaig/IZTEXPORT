@@ -13,6 +13,7 @@ interface Party {
   current_balance: number
   phone: string
   created_at: string
+  note?: string
 }
 
 export default function StatementsPage() {
@@ -29,14 +30,16 @@ export default function StatementsPage() {
     let query = supabase
       .from('parties')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: true })
 
     if (typeFilter !== 'all') {
       query = query.eq('party_type', typeFilter)
     }
 
     const { data } = await query
-    if (data) setParties(data)
+    if (data) {
+      setParties(data)
+    }
   }
 
   useEffect(() => {
@@ -100,7 +103,7 @@ export default function StatementsPage() {
           <Link
             key={party.id}
             href={`/statements/${party.id}`}
-            className="bg-white rounded-xl border p-4 flex items-center justify-between transition-all hover:border-gray-400 hover:shadow-md"
+            className="relative group bg-white rounded-xl border p-4 flex items-center justify-between transition-all hover:border-gray-400 hover:shadow-md"
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
@@ -108,18 +111,34 @@ export default function StatementsPage() {
               </div>
               <div>
                 <h3 className="font-semibold">{party.name}</h3>
-                <p className="text-sm text-gray-500 capitalize">{party.party_type}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-sm text-gray-500 capitalize">
+                    {party.party_type} • {new Date(party.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                  {party.note && (
+                    <FileText className="w-3.5 h-3.5 text-gray-400 ml-1" />
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <p className="text-sm text-gray-500">Balance</p>
                 <p className={`font-bold ${party.current_balance > 0 ? 'text-green-600' : party.current_balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                  ₹{party.current_balance.toLocaleString('en-IN')}
+                  ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
                 </p>
               </div>
               <FileText className="w-5 h-5 text-gray-400" />
             </div>
+
+            {/* Tooltip for Note */}
+            {party.note && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                <span className="font-semibold text-gray-300">Note:</span> {party.note}
+                {/* Tooltip downward arrow */}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+              </div>
+            )}
           </Link>
         ))}
       </div>

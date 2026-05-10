@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, Factory, Package, ArrowLeft } from 'lucide-react'
+import { Plus, Search, Factory, Package, ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -11,6 +11,7 @@ interface Issue {
   meters_given: number
   product_type: string
   issue_date: string
+  note?: string
   factory_name: string
   cloth_name: string
   cloth_color: string
@@ -36,6 +37,7 @@ export default function IssuesPage() {
         meters_given,
         product_type,
         issue_date,
+        note,
         factory:parties!cloth_issues_factory_id_fkey(name),
         cloth_purchase:cloth_purchases!cloth_issues_cloth_purchase_id_fkey(cloth_name, cloth_color, color_image_url)
       `)
@@ -62,6 +64,7 @@ export default function IssuesPage() {
             meters_given: Number(issue.meters_given),
             product_type,
             issue_date: issue.issue_date,
+            note: issue.note,
             factory_name,
             cloth_name,
             cloth_color,
@@ -190,7 +193,7 @@ export default function IssuesPage() {
       ) : (
         <div className="grid gap-4">
           {filteredIssues.map(issue => (
-            <div key={issue.id} className="bg-white rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md">
+            <div key={issue.id} className="relative group bg-white rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md">
               <div className="flex items-center gap-4">
                 {issue.color_image_url ? (
                   <img src={issue.color_image_url} alt={issue.cloth_color} className="w-12 h-12 rounded-lg object-cover flex-shrink-0 border" />
@@ -211,10 +214,22 @@ export default function IssuesPage() {
                 <p className="text-xl font-bold text-blue-600">
                   {issue.meters_given.toLocaleString('en-IN')}m
                 </p>
-                <p className="text-xs text-gray-500">
-                  {new Date(issue.issue_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}
-                </p>
+                <div className="flex items-center justify-end gap-1 mt-1 text-xs text-gray-500">
+                  <span>{new Date(issue.issue_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  {issue.note && (
+                    <FileText className="w-3.5 h-3.5 text-gray-400" />
+                  )}
+                </div>
               </div>
+
+              {/* Tooltip for Note */}
+              {issue.note && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                  <span className="font-semibold text-gray-300">Note:</span> {issue.note}
+                  {/* Tooltip downward arrow */}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1,14 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Download, Printer, Edit2, Save, X, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
-import { format } from 'date-fns'
+import { ArrowLeft, FileText, Printer, X, Plus, Search, ArrowRight, Download, Package, Factory, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
-import html2canvas from 'html2canvas-pro'
 import jsPDF from 'jspdf'
-import Link from 'next/link'
+import html2canvas from 'html2canvas-pro'
 
 interface Party {
   id: string
@@ -22,1162 +20,950 @@ interface Party {
 
 interface LedgerEntry {
   id: string
-  entry_type: string
-  amount: number
   entry_date: string
+  entry_type: 'credit' | 'debit'
+  amount: number
   note: string
-  related_type?: string
-  related_id?: string
+  related_type: string
   created_at: string
 }
+interface ClothIssue {
+  id: string
+  factory_id: string
+  meters_given: number
+  product_type: string
+  issue_date: string
+  factory: { name: string }
+  cloth_purchase: {
+    cloth_name: string
+    cloth_color: string
+    color_image_url: string
+  }
+  production_records?: { id: string }[]
+  is_active?: boolean
+}
+interface ClothStock {
+  id: string
+  purchase_id: string
+  cloth_name: string
+  cloth_color: string
+  meters_remaining: number
+  meters_issued: number
+  purchase: { color_image_url: string }
+}
 
-export default function StatementPage() {
+export default function PartyStatementPage() {
+  const router = useRouter()
   const params = useParams()
   const partyId = params?.partyId as string
-  const router = useRouter()
-  const statementRef = useRef<HTMLDivElement>(null)
+  
   const [party, setParty] = useState<Party | null>(null)
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
-  const [editingData, setEditingData] = useState({ date: '', note: '' })
-  const [activeTab, setActiveTab] = useState<'ledger' | 'factory_records' | 'supplier_records' | 'customer_records'>('ledger')
-  const [issues, setIssues] = useState<any[]>([])
-  const [purchases, setPurchases] = useState<any[]>([])
-  const [salesList, setSalesList] = useState<any[]>([])
-  const [paymentsList, setPaymentsList] = useState<any[]>([])
-  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({})
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isAdding, setIsAdding] = useState(false)
-  const [ledgerFilter, setLedgerFilter] = useState<string | null>(null)
-  const [newTx, setNewTx] = useState({
-    amount: '',
-    type: 'credit',
-    date: new Date().toISOString().split('T')[0],
+  
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
+  const [updateType, setUpdateType] = useState<'receive' | 'give'>('receive')
+  const [updateAmount, setUpdateAmount] = useState('')
+  const [updateNote, setUpdateNote] = useState('')
+  const [updateDate, setUpdateDate] = useState(new Date().toISOString().split('T')[0])
+  const [isUpdating, setIsUpdating] = useState(false)
+
+  const [isAddProductionModalOpen, setIsAddProductionModalOpen] = useState(false)
+  const [clothIssues, setClothIssues] = useState<ClothIssue[]>([])
+  const [issuesLoading, setIssuesLoading] = useState(false)
+  const [selectedIssue, setSelectedIssue] = useState<ClothIssue | null>(null)
+  const [clothStocks, setClothStocks] = useState<ClothStock[]>([])
+  const [selectedStock, setSelectedStock] = useState<ClothStock | null>(null)
+  const [metersToIssue, setMetersToIssue] = useState('')
+  const [productionFormData, setProductionFormData] = useState({
+    cloth_issue_id: '',
+    product_type: '',
+    output_quantity: '',
+    output_unit: 'pieces',
+    rate_per_unit: '',
+    paid_amount: '0',
+    production_date: new Date().toISOString().split('T')[0],
+    note: ''
+  })
+
+  const [isAddSaleModalOpen, setIsAddSaleModalOpen] = useState(false)
+  const [productStocks, setProductStocks] = useState<{ product_type: string, quantity: number }[]>([])
+  const [productSearchQuery, setProductSearchQuery] = useState('')
+  const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const [isNewProduct, setIsNewProduct] = useState(false)
+  const [productsLoading, setProductsLoading] = useState(false)
+  
+  const [saleFormData, setSaleFormData] = useState({
+    product_type: '',
+    quantity: '',
+    rate: '',
+    paid_amount: '0',
+    sale_date: new Date().toISOString().split('T')[0],
     note: ''
   })
 
   useEffect(() => {
     if (partyId) {
-      fetchPartyData(true)
+      fetchStatement()
     }
   }, [partyId])
 
-  const fetchPartyData = async (isInitial = false) => {
+
+  useEffect(() => {
+    if (saleFormData.product_type) {
+      const isNew = !productStocks.some(p => p.product_type === saleFormData.product_type)
+      setIsNewProduct(isNew)
+    }
+  }, [saleFormData.product_type, productStocks])
+
+  const fetchStatement = async () => {
+    setLoading(true)
+    
     // Fetch party details
-    const { data: partyData } = await supabase
+    const { data: partyData, error: partyError } = await supabase
       .from('parties')
       .select('*')
       .eq('id', partyId)
       .single()
 
-    if (partyData) {
-      setParty(partyData)
-      
-      if (isInitial && partyData.party_type === 'factory') {
-        setActiveTab('factory_records')
-      }
-      
-      if (isInitial && partyData.party_type === 'supplier') {
-        setActiveTab('supplier_records')
-      }
-
-      if (isInitial && partyData.party_type === 'customer') {
-        setActiveTab('customer_records')
-      }
-
-      // If Factory, fetch all cloth issues and their production records for the dashboard
-      if (partyData.party_type === 'factory') {
-        const { data: issuesData } = await supabase
-          .from('cloth_issues')
-          .select(`
-            *,
-            cloth_purchase:cloth_purchases(cloth_name, cloth_color),
-            production_records(*)
-          `)
-          .eq('factory_id', partyId)
-          .order('issue_date', { ascending: false })
-          .order('created_at', { ascending: false })
-          
-        if (issuesData) {
-          setIssues(issuesData.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
-        }
-      }
-
-      // If Supplier, fetch all cloth purchases for the dashboard
-      if (partyData.party_type === 'supplier') {
-        const { data: purchasesData } = await supabase
-          .from('cloth_purchases')
-          .select(`
-            *,
-            cloth_stock (meters_purchased)
-          `)
-          .eq('supplier_id', partyId)
-          .order('purchase_date', { ascending: false })
-          .order('created_at', { ascending: false })
-          
-        if (purchasesData) {
-          setPurchases(purchasesData.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
-        }
-      }
+    if (partyError || !partyData) {
+      toast.error('Failed to load party details')
+      router.push('/statements')
+      return
     }
+    
+    setParty(partyData)
 
     // Fetch ledger entries
-    let query = supabase
+    const { data: ledgerData, error: ledgerError } = await supabase
       .from('ledger_entries')
       .select('*')
       .eq('party_id', partyId)
       .order('entry_date', { ascending: true })
       .order('created_at', { ascending: true })
 
-    const { data: entriesData } = await query
-
-    if (entriesData) {
-      setEntries(entriesData)
+    if (ledgerData) {
+      setEntries(ledgerData)
     }
-
-    if (partyData?.party_type === 'customer') {
-      const { data: sData } = await supabase
-        .from('sales')
-        .select('*')
-        .eq('customer_id', partyId)
-        .order('sale_date', { ascending: false })
-        .order('created_at', { ascending: false })
-      if (sData) setSalesList(sData)
-    }
-
-    const { data: pData } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('party_id', partyId)
-    if (pData) setPaymentsList(pData)
-
+    
     setLoading(false)
   }
 
-  const handleEditClick = (entry: any) => {
-    setEditingEntryId(entry.id)
-    setEditingData({
-      date: entry.date ? format(new Date(entry.date), 'yyyy-MM-dd') : '',
-      note: entry.particulars
+  const fetchProductStock = async () => {
+    setProductsLoading(true)
+    const { data: productions } = await supabase
+      .from('production_records')
+      .select('product_type, output_quantity')
+      .gt('output_quantity', 0)
+
+    const { data: sales } = await supabase
+      .from('sales')
+      .select('product_type, quantity')
+      .gt('quantity', 0)
+
+    const productMap = new Map<string, { produced: number, sold: number }>()
+
+    productions?.forEach(p => {
+      const type = (p.product_type || '').trim()
+      if (!type) return;
+      const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()
+      const existing = productMap.get(capitalizedType) || { produced: 0, sold: 0 }
+      existing.produced += Number(p.output_quantity)
+      productMap.set(capitalizedType, existing)
     })
+
+    sales?.forEach(s => {
+      const type = (s.product_type || '').trim()
+      if (!type) return;
+      const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()
+      const existing = productMap.get(capitalizedType) || { produced: 0, sold: 0 }
+      existing.sold += Number(s.quantity)
+      productMap.set(capitalizedType, existing)
+    })
+
+    const pStocks = Array.from(productMap.entries()).map(([product_type, { produced, sold }]) => ({
+      product_type,
+      quantity: Math.max(0, produced - sold)
+    })).sort((a, b) => a.product_type.localeCompare(b.product_type));
+
+    setProductStocks(pStocks)
+    setProductsLoading(false)
   }
 
-  const handleCancelEdit = () => {
-    setEditingEntryId(null)
-    setEditingData({ date: '', note: '' })
+  const openAddSaleModal = () => {
+    fetchProductStock()
+    setIsAddSaleModalOpen(true)
   }
 
-  const handleSaveEdit = async () => {
-    if (!editingEntryId) return
+  const openAddProductionModal = () => {
+    if (!party) return
+    // Reset state for the modal to ensure clean state on each open
+    setSelectedIssue(null)
+    setSelectedStock(null)
+    setMetersToIssue('')
+    setProductionFormData({
+      cloth_issue_id: '',
+      product_type: '',
+      output_quantity: '',
+      output_unit: 'pieces',
+      rate_per_unit: '',
+      paid_amount: '0',
+      production_date: new Date().toISOString().split('T')[0],
+      note: ''
+    })
+    setClothIssues([]) // Clear previous issues
+    setClothStocks([]) // Clear previous stocks
+    fetchFactoryIssues()
+    setIsAddProductionModalOpen(true)
+  }
 
-    const { error } = await supabase
-      .from('ledger_entries')
-      .update({
-        note: editingData.note,
-        entry_date: editingData.date
-      })
-      .eq('id', editingEntryId)
+  const fetchFactoryIssues = async () => {
+    if (!party) return
+    setIssuesLoading(true)
 
-    if (error) {
-      toast.error('Failed to update entry.')
+    const { data: matchingParties } = await supabase
+      .from('parties')
+      .select('id')
+      .eq('name', party.name)
+      .eq('party_type', 'factory')
+
+    const partyIds = matchingParties?.map(p => p.id) || []
+    let availableIssues: ClothIssue[] = []
+
+    if (partyIds.length > 0) {
+      const { data } = await supabase
+        .from('cloth_issues')
+        .select(`
+          *,
+          factory:parties!cloth_issues_factory_id_fkey(name),
+          cloth_purchase:cloth_purchases!cloth_issues_cloth_purchase_id_fkey(
+            cloth_name,
+            cloth_color,
+            color_image_url
+          ),
+          production_records(id)
+        `)
+        .in('factory_id', partyIds)
+        .gt('meters_given', 0)
+        .order('issue_date', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (data) {
+        // Filter out soft-deleted issues
+        availableIssues = (data as ClothIssue[]).filter(i => i.is_active !== false)
+        setClothIssues(availableIssues)
+      } else {
+        setClothIssues([])
+      }
     } else {
-      toast.success('Entry updated successfully.')
-      await fetchPartyData() // Re-fetch to re-calculate and re-sort
-      handleCancelEdit()
+      setClothIssues([])
     }
-  }
 
-  // Automatically align standard accounting signs (+/-)
-  // Customers: Debits increase balance (Asset). Factories: Credits increase balance (Liability)
-  const getBalanceChange = (type: string, amount: number) => {
-    if (party?.party_type === 'customer') {
-      return type === 'debit' ? amount : -amount
+    const { data: stockData } = await supabase
+      .from('cloth_stock')
+      .select(`
+        *,
+        purchase:cloth_purchases!cloth_stock_purchase_id_fkey(color_image_url)
+      `)
+      .gt('meters_remaining', 0)
+      .order('cloth_name')
+      
+    if (stockData) {
+      setClothStocks(stockData)
     } else {
-      return type === 'credit' ? amount : -amount
+      setClothStocks([])
     }
+
+    if (availableIssues.length > 0) {
+      handleIssueSelect(availableIssues[0], null)
+    } else if (stockData && stockData.length > 0) {
+      handleIssueSelect(null, stockData[0])
+    }
+
+    setIssuesLoading(false)
   }
 
-  const handleDeleteTransaction = async (originalEntry: any) => {
-    if (!window.confirm('Are you sure you want to delete this manual transaction? The balance will be adjusted accordingly.')) {
+  const handleIssueSelect = (issue: ClothIssue | null, stock: ClothStock | null = null) => {
+    setSelectedIssue(issue)
+    setSelectedStock(stock)
+    setMetersToIssue('')
+    setProductionFormData(prev => ({
+      ...prev,
+      cloth_issue_id: issue ? issue.id : '',
+      product_type: issue?.product_type || ''
+    }))
+  }
+
+  const handleRemoveIssue = async (issueId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    toast((t) => (
+      <div>
+        <p className="mb-4 text-sm font-medium text-gray-800">Are you sure you want to remove this issued cloth from the active list? (It will remain in the database)</p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id)
+              setIsUpdating(true)
+              try {
+                const { error } = await supabase
+                  .from('cloth_issues')
+                  .update({ is_active: false })
+                  .eq('id', issueId)
+
+                if (error) {
+                  if (error.message.includes('is_active')) {
+                    toast.error('Please run the SQL command to add is_active column first.')
+                  } else throw error
+                  return
+                }
+                toast.success('Removed successfully')
+                fetchFactoryIssues()
+              } catch (error: any) {
+                toast.error('Failed to remove: ' + error.message)
+              } finally {
+                setIsUpdating(false)
+              }
+            }}
+            className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity })
+  }
+
+  const handleAddProduction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!party || (!selectedIssue && !selectedStock)) {
+      toast.error('Please select an issued cloth or available stock.')
       return
     }
 
+    const quantity = parseInt(productionFormData.output_quantity) || 0
+    const rate = parseFloat(productionFormData.rate_per_unit) || 0
+    const paidNow = parseFloat(productionFormData.paid_amount) || 0
+
+    if (quantity <= 0 || rate < 0) {
+      toast.error('Please enter valid quantity and rate.')
+      return
+    }
+
+    let currentIssueId = selectedIssue?.id
+
+    if (selectedStock) {
+      const issueMeters = parseFloat(metersToIssue)
+      if (isNaN(issueMeters) || issueMeters <= 0 || issueMeters > selectedStock.meters_remaining) {
+         toast.error('Please enter a valid number of meters to issue.')
+         return
+      }
+
+      setIsUpdating(true)
+
+      const { data: newIssue, error: issueError } = await supabase
+        .from('cloth_issues')
+        .insert({
+          factory_id: party.id,
+          cloth_purchase_id: selectedStock.purchase_id,
+          meters_given: issueMeters,
+          product_type: productionFormData.product_type,
+          issue_date: productionFormData.production_date,
+          note: 'Issued directly from production form'
+        })
+        .select()
+        .single()
+
+      if (issueError) {
+        toast.error('Failed to issue cloth')
+        setIsUpdating(false)
+        return
+      }
+
+      currentIssueId = newIssue.id
+
+      await supabase
+        .from('cloth_stock')
+        .update({ 
+          meters_issued: selectedStock.meters_issued + issueMeters
+        })
+        .eq('id', selectedStock.id)
+    } else {
+      setIsUpdating(true)
+    }
+
+    const totalValue = quantity * rate
+    const dueAmount = totalValue - paidNow
+
     try {
-      // Reverse the balance impact
-      const balanceAdjustment = getBalanceChange(originalEntry.entry_type, -originalEntry.amount)
-      const newBalance = (party?.current_balance || 0) + balanceAdjustment
+      const productionData = {
+        factory_id: party.id,
+        cloth_issue_id: currentIssueId,
+        product_type: productionFormData.product_type,
+        output_quantity: quantity,
+        output_unit: productionFormData.output_unit,
+        rate_per_unit: rate,
+        total_value: totalValue,
+        paid_amount: paidNow,
+        production_date: productionFormData.production_date,
+        note: productionFormData.note
+      }
 
-      const { error: ledgerError } = await supabase
-        .from('ledger_entries')
-        .delete()
-        .eq('id', originalEntry.id)
+      const { data: production, error: prodError } = await supabase.from('production_records').insert(productionData).select().single()
+      if (prodError) throw prodError
 
-      if (ledgerError) throw ledgerError
+      await supabase.from('ledger_entries').insert({
+        party_id: party.id, entry_type: 'credit', amount: totalValue, related_type: 'production',
+        related_id: production.id, entry_date: productionFormData.production_date, note: `Production: ${quantity} ${productionFormData.product_type}`
+      })
 
-      const { error: partyError } = await supabase
-        .from('parties')
-        .update({ current_balance: newBalance })
-        .eq('id', partyId)
+      if (paidNow > 0) {
+        const { data: payment, error: payError } = await supabase.from('payments').insert({
+          party_id: party.id, related_type: 'production', related_id: production.id, amount: paidNow,
+          payment_date: productionFormData.production_date, payment_mode: 'cash', note: `Payment for production: ${productionFormData.product_type}`
+        }).select().single()
 
-      if (partyError) throw partyError
+        if (!payError && payment) {
+          await supabase.from('ledger_entries').insert({
+            party_id: party.id, entry_type: 'debit', amount: paidNow, related_type: 'payment',
+            related_id: payment.id, entry_date: productionFormData.production_date, note: `Payment made for production`
+          })
+        }
+      }
 
-      toast.success('Transaction deleted successfully')
-      fetchPartyData()
-    } catch (e: any) {
-      console.error(e)
-      toast.error('Failed to delete transaction')
+      const newBalance = party.current_balance + dueAmount
+      await supabase.from('parties').update({ current_balance: newBalance }).eq('id', party.id)
+        
+      toast.success('Production added successfully')
+      setIsAddProductionModalOpen(false)
+      setProductionFormData({ cloth_issue_id: '', product_type: '', output_quantity: '', output_unit: 'pieces', rate_per_unit: '', paid_amount: '0', production_date: new Date().toISOString().split('T')[0], note: '' })
+      setSelectedIssue(null)
+      fetchStatement()
+    } catch (error: any) {
+      toast.error('Failed to add production: ' + error.message)
+    } finally {
+      setIsUpdating(false)
     }
   }
 
-  const handleAddTransaction = async () => {
-    if (!newTx.amount || isNaN(Number(newTx.amount)) || Number(newTx.amount) <= 0) {
+  const handleAddSale = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!party) return
+    const quantity = parseInt(saleFormData.quantity) || 0
+    const rate = parseFloat(saleFormData.rate) || 0
+    const paidNow = parseFloat(saleFormData.paid_amount) || 0
+
+    if (quantity <= 0 || rate <= 0) {
+      toast.error('Please enter valid quantity and rate')
+      return
+    }
+
+    const availableStock = productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity || 0
+    if (!isNewProduct && quantity > availableStock) {
+      toast.error(`Cannot sell more than available stock (${availableStock})`)
+      return;
+    }
+
+    setIsUpdating(true)
+    const totalAmount = quantity * rate
+    
+    try {
+      const saleData = {
+        customer_id: party.id,
+        product_type: saleFormData.product_type,
+        quantity: quantity,
+        rate: rate,
+        total_amount: totalAmount,
+        old_balance: party.current_balance, // previous balance
+        paid_amount: paidNow,
+        sale_date: saleFormData.sale_date,
+        note: saleFormData.note
+      }
+
+      // Insert sale record
+      const { data: sale, error: saleError } = await supabase
+        .from('sales')
+        .insert(saleData)
+        .select()
+        .single()
+
+      if (saleError) throw saleError
+
+      // Add ledger entry for customer (debit = customer owes us)
+      const { data: debitEntry, error: debitError } = await supabase
+        .from('ledger_entries')
+        .insert({
+          party_id: party.id,
+          entry_type: 'debit',
+          amount: totalAmount,
+          related_type: 'sale',
+          related_id: sale.id,
+          entry_date: saleFormData.sale_date,
+          note: `Sale: ${quantity} ${saleFormData.product_type} @ ₹${rate} each${saleFormData.note ? ` - ${saleFormData.note}` : ''}`
+        })
+        .select()
+        .single()
+
+      let newBalance = party.current_balance + totalAmount
+
+      const newEntries = debitEntry ? [debitEntry] : []
+
+      // If payment made, record it
+      if (paidNow > 0) {
+        const { data: payment, error: payError } = await supabase
+          .from('payments')
+          .insert({
+            party_id: party.id,
+            related_type: 'sale',
+            related_id: sale.id,
+            amount: paidNow,
+            payment_date: saleFormData.sale_date,
+            payment_mode: 'cash',
+            note: `Payment for sale: ${saleFormData.product_type}`
+          })
+          .select()
+          .single()
+
+        if (!payError && payment) {
+          // Add payment ledger entry
+          const { data: creditEntry } = await supabase
+            .from('ledger_entries')
+            .insert({
+              party_id: party.id,
+              entry_type: 'credit',
+              amount: paidNow,
+              related_type: 'payment',
+              related_id: payment.id,
+              entry_date: saleFormData.sale_date,
+              note: `Payment received for sale: ${saleFormData.product_type}`
+            })
+            .select()
+            .single()
+            
+          newBalance -= paidNow
+          if (creditEntry) newEntries.push(creditEntry)
+        }
+      }
+
+      const { error: partyUpdateError } = await supabase
+        .from('parties')
+        .update({ current_balance: newBalance })
+        .eq('id', party.id)
+        
+      if (partyUpdateError) throw partyUpdateError
+
+      setParty(prev => prev ? { ...prev, current_balance: newBalance } : null)
+      setEntries(prev => {
+        const combined = [...prev, ...newEntries]
+        return combined.sort((a, b) => new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime() || new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      })
+      
+      toast.success('Sale added successfully')
+      setIsAddSaleModalOpen(false)
+      setSaleFormData({
+        product_type: '',
+        quantity: '',
+        rate: '',
+        paid_amount: '0',
+        sale_date: new Date().toISOString().split('T')[0],
+        note: ''
+      })
+    } catch (error: any) {
+      toast.error('Failed to add sale: ' + error.message)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleUpdateBalance = async () => {
+    if (!party) return
+
+    if (!updateAmount || isNaN(Number(updateAmount)) || Number(updateAmount) <= 0) {
       toast.error('Please enter a valid amount')
       return
     }
 
-    setIsAdding(true)
-    try {
-      const amountNum = Number(newTx.amount)
-      
-      const balanceChange = getBalanceChange(newTx.type, amountNum)
-      const newBalance = (party?.current_balance || 0) + balanceChange
+    const amount = Number(updateAmount)
 
-      const { error: ledgerError } = await supabase
+    setIsUpdating(true)
+    try {
+      // Receive Money = Credit, Give Money = Debit
+      const entryType = updateType === 'receive' ? 'credit' : 'debit'
+      
+      const { data: newEntry, error: ledgerError } = await supabase
         .from('ledger_entries')
         .insert({
-          party_id: partyId,
-          entry_type: newTx.type,
-          amount: amountNum,
-          entry_date: newTx.date,
-          note: newTx.note,
-          related_type: 'manual_payment'
+          party_id: party.id,
+          entry_date: updateDate,
+          entry_type: entryType,
+          amount: amount,
+          note: updateNote || (updateType === 'receive' ? 'Payment Received' : 'Payment Given'),
+          related_type: 'payment'
         })
-
+        .select()
+        .single()
       if (ledgerError) throw ledgerError
 
-      const { error: partyError } = await supabase
+      // Manually calculate and update the party's current balance
+      let newBalance = party.current_balance
+      const isCustomer = party.party_type === 'customer'
+      if (isCustomer) {
+        if (entryType === 'debit') newBalance += amount
+        else newBalance -= amount
+      } else {
+        if (entryType === 'credit') newBalance += amount
+        else newBalance -= amount
+      }
+
+      const { error: partyUpdateError } = await supabase
         .from('parties')
         .update({ current_balance: newBalance })
-        .eq('id', partyId)
+        .eq('id', party.id)
+        
+      if (partyUpdateError) console.error('Failed to update party balance directly', partyUpdateError)
 
-      if (partyError) throw partyError
+      // Immediately update local state for transparent reflection
+      setParty(prev => prev ? { ...prev, current_balance: newBalance } : null)
 
-      toast.success('Transaction added successfully')
-      setIsAddModalOpen(false)
-      setNewTx({ amount: '', type: 'credit', date: new Date().toISOString().split('T')[0], note: '' })
-      fetchPartyData()
-    } catch (e: any) {
-      console.error(e)
-      toast.error('Failed to add transaction')
+      if (newEntry) {
+        setEntries(prev => [...prev, newEntry])
+      }
+      
+      toast.success('Balance updated successfully')
+      setIsUpdateModalOpen(false)
+      setUpdateAmount('')
+      setUpdateNote('')
+      fetchStatement() // background refresh to ensure sync
+    } catch (error: any) {
+      toast.error('Failed to update balance: ' + error.message)
     } finally {
-      setIsAdding(false)
+      setIsUpdating(false)
     }
   }
 
-  const generatePDF = async () => {
-    if (!statementRef.current) return
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('statement-content')
+    if (!element || !party) return
 
     const toastId = toast.loading('Generating PDF...')
     try {
-      const canvas = await html2canvas(statementRef.current, {
+      const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
         logging: false
       })
 
-      const imgData = canvas.toDataURL('image/png')
-      const pdf = new jsPDF('p', 'mm', 'a4')
-      const margin = 15 // 15mm margin on all sides
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const imgWidth = pdfWidth - (margin * 2)
+      const imgWidth = 210 // A4 width in mm
+      const pageHeight = 297 // A4 height in mm
       const imgHeight = (canvas.height * imgWidth) / canvas.width
+      let heightLeft = imgHeight
+      let position = 0
+      
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
 
-      pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight)
-      pdf.save(`${party?.name}-statement.pdf`)
-      toast.success('PDF downloaded successfully!', { id: toastId })
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight
+        pdf.addPage()
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
+      
+      pdf.save(`${party.name.replace(/\s+/g, '_')}_Statement.pdf`)
+      toast.success('PDF downloaded successfully', { id: toastId })
     } catch (error) {
-      console.error('PDF generation failed:', error)
+      console.error('Error generating PDF:', error)
       toast.error('Failed to generate PDF', { id: toastId })
     }
   }
 
-  const printStatement = () => {
-    window.print()
+  if (loading) {
+    return <div className="p-8 text-center">Loading statement...</div>
   }
 
-  const getBalanceColor = (balance: number) => {
-    if (balance === 0) return 'text-gray-900'
-    if (party?.party_type === 'customer') {
-      return balance > 0 ? 'text-green-600' : 'text-red-600'
+  if (!party) return null
+
+  // Calculate running balance
+  let runningBalance = party.opening_balance || 0
+  const statementRows = entries.map(entry => {
+    const isCustomer = party.party_type === 'customer'
+    const oldBalance = runningBalance
+    
+    if (isCustomer) {
+      if (entry.entry_type === 'debit') runningBalance += entry.amount
+      else runningBalance -= entry.amount
     } else {
-      return balance > 0 ? 'text-red-600' : 'text-green-600'
-    }
-  }
-
-  const togglePanel = (id: string) => {
-    setExpandedPanels(prev => ({...prev, [id]: !prev[id]}))
-  }
-
-  const buildUnifiedLedger = () => {
-    if (!party) return []
-    const allEntries = entries.map(e => {
-      let subtext = e.related_type
-      let particulars = e.note || e.related_type
-
-      if (e.related_type === 'production') {
-        const prod = issues.flatMap(i => i.production_records || []).find(p => p.id === e.related_id)
-        if (prod) {
-          const issue = issues.find(i => i.id === prod.cloth_issue_id)
-          if (issue) {
-            subtext = `${issue.cloth_purchase?.cloth_name} ${issue.cloth_purchase?.cloth_color ? `(${issue.cloth_purchase.cloth_color})` : ''}`
-          }
-        }
-      } else if (e.related_type === 'purchase') {
-        const pur = purchases.find(p => p.id === e.related_id)
-        if (pur) {
-          subtext = pur.cloth_color || 'Cloth Purchase'
-        }
-      } else if (e.related_type === 'sale') {
-        const sale = salesList.find(s => s.id === e.related_id)
-        if (sale) {
-          subtext = sale.note || 'Garment Sale'
-        }
-      } else if (e.related_type === 'payment') {
-        const pay = paymentsList.find(p => p.id === e.related_id)
-        if (pay) {
-          subtext = pay.note || 'Payment Received/Made'
-          if (pay.payment_mode) {
-            particulars = `Payment (${pay.payment_mode.replace('_', ' ')})`
-          }
-        }
-      } else if (e.related_type === 'manual_payment' || !e.related_type) {
-        subtext = 'Manual Adjustment'
-      }
-
-      if (particulars === 'production') particulars = 'Production'
-      if (particulars === 'purchase') particulars = 'Purchase'
-      if (particulars === 'sale') particulars = 'Sale'
-      if (particulars === 'payment') particulars = 'Payment'
-
-      return {
-        id: e.id,
-        date: e.entry_date,
-        particulars: particulars,
-        subtext: subtext,
-        debit: e.entry_type === 'debit' ? e.amount : 0,
-        credit: e.entry_type === 'credit' ? e.amount : 0,
-        isManual: e.related_type === 'manual_payment' || !e.related_type,
-        originalEntry: e,
-        createdAt: new Date(e.created_at).getTime()
-      }
-    })
-
-    // Sort by Date, then by createdAt to maintain consistent order
-    allEntries.sort((a, b) => {
-      const dateA = new Date(a.date).getTime()
-      const dateB = new Date(b.date).getTime()
-      if (dateA !== dateB) return dateA - dateB
-      return a.createdAt - b.createdAt
-    })
-
-    return allEntries
-  }
-
-  const getUnifiedBalanceChange = (debit: number, credit: number) => {
-    if (party?.party_type === 'customer') {
-      return debit - credit
-    } else {
-      return credit - debit
-    }
-  }
-
-  const unifiedEntries = buildUnifiedLedger()
-
-  const filteredEntries = unifiedEntries.filter(entry => {
-    if (!ledgerFilter) return true
-    
-    // For Factory Issues
-    if (party?.party_type === 'factory') {
-      const issue = issues.find(i => i.id === ledgerFilter)
-      if (!issue) return false
-      const prodIds = issue.production_records?.map((p: any) => p.id) || []
-      
-      if (entry.originalEntry.related_type === 'production') {
-        return prodIds.includes(entry.originalEntry.related_id)
-      }
-      if (entry.originalEntry.related_type === 'payment') {
-        const pay = paymentsList.find(p => p.id === entry.originalEntry.related_id)
-        if (pay && pay.related_type === 'production') {
-          return prodIds.includes(pay.related_id)
-        }
-      }
-      return false
+      if (entry.entry_type === 'credit') runningBalance += entry.amount
+      else runningBalance -= entry.amount
     }
     
-    // For Supplier Purchases
-    if (party?.party_type === 'supplier') {
-      const purId = ledgerFilter
-      if (entry.originalEntry.related_type === 'purchase') {
-        return entry.originalEntry.related_id === purId
-      }
-      if (entry.originalEntry.related_type === 'payment') {
-        const pay = paymentsList.find(p => p.id === entry.originalEntry.related_id)
-        if (pay && pay.related_type === 'purchase') {
-          return pay.related_id === purId
-        }
-      }
-      return false
-    }
-    
-    // For Customer Sales
-    if (party?.party_type === 'customer') {
-      const saleId = ledgerFilter
-      if (entry.originalEntry.related_type === 'sale') {
-        return entry.originalEntry.related_id === saleId
-      }
-      if (entry.originalEntry.related_type === 'payment') {
-        const pay = paymentsList.find(p => p.id === entry.originalEntry.related_id)
-        if (pay && pay.related_type === 'sale') {
-          return pay.related_id === saleId
-        }
-      }
-      return false
-    }
-
-    return true
-  })
-
-  const totalDebit = filteredEntries.reduce((sum, e) => sum + e.debit, 0)
-  const totalCredit = filteredEntries.reduce((sum, e) => sum + e.credit, 0)
-
-  const openingBalance = ledgerFilter ? 0 : (party?.opening_balance || 0)
-  let currentRunningBalance = openingBalance
-  const entriesWithBalance = filteredEntries.map(entry => {
-    currentRunningBalance += getUnifiedBalanceChange(entry.debit, entry.credit)
     return {
       ...entry,
-      runningBalance: currentRunningBalance
+      oldBalance,
+      balance: runningBalance
     }
   })
-  const closingBalance = currentRunningBalance
 
-  // Pre-calculate dues based on FIFO allocation of current overall balance
-  const factoryProductionDues = new Map<string, { due: number, paid: number }>();
-  const supplierPurchaseDues = new Map<string, { due: number, paid: number }>();
-  const customerSaleDues = new Map<string, { due: number, paid: number }>();
-
-  if (party) {
-    let remainingBalance = Math.max(0, party.current_balance);
-
-    if (party.party_type === 'factory') {
-      const allRecords = issues.flatMap(i => i.production_records || []).sort((a, b) => {
-        const dateA = new Date(a.production_date || a.created_at).getTime();
-        const dateB = new Date(b.production_date || b.created_at).getTime();
-        return dateB - dateA;
-      });
-      for (const record of allRecords) {
-        const totalVal = Number(record.total_value) || 0;
-        const due = Math.min(totalVal, remainingBalance);
-        const paid = totalVal - due;
-        factoryProductionDues.set(record.id, { due, paid });
-        remainingBalance -= due;
-      }
-    } else if (party.party_type === 'supplier') {
-      const allPurchases = [...purchases].sort((a, b) => {
-        const dateA = new Date(a.purchase_date || a.created_at).getTime();
-        const dateB = new Date(b.purchase_date || b.created_at).getTime();
-        return dateB - dateA;
-      });
-      for (const purchase of allPurchases) {
-        const stockMeters = Array.isArray(purchase.cloth_stock) ? purchase.cloth_stock[0]?.meters_purchased : purchase.cloth_stock?.meters_purchased;
-        const meters = purchase.meters_purchased || purchase.meters || stockMeters || 0;
-        const totalVal = Number(purchase.total_amount) || Number(purchase.total_value) || (meters * Number(purchase.rate || purchase.rate_per_meter || 0)) || 0;
-        const due = Math.min(totalVal, remainingBalance);
-        const paid = totalVal - due;
-        supplierPurchaseDues.set(purchase.id, { due, paid });
-        remainingBalance -= due;
-      }
-    } else if (party.party_type === 'customer') {
-      const allSales = [...salesList].sort((a, b) => {
-        const dateA = new Date(a.sale_date || a.created_at).getTime();
-        const dateB = new Date(b.sale_date || b.created_at).getTime();
-        return dateB - dateA;
-      });
-      for (const sale of allSales) {
-        const totalVal = Number(sale.total_amount) || 0;
-        const due = Math.min(totalVal, remainingBalance);
-        const paid = totalVal - due;
-        customerSaleDues.set(sale.id, { due, paid });
-        remainingBalance -= due;
-      }
-    }
-  }
-
-  let fifoDue = 0;
-  let fifoPaid = 0;
-  let specificPaid = 0;
-  
-  if (ledgerFilter) {
-    if (party?.party_type === 'factory') {
-      const issue = issues.find(i => i.id === ledgerFilter);
-      if (issue) {
-        issue.production_records?.forEach((p: any) => {
-          const dues = factoryProductionDues.get(p.id) || { due: 0, paid: Number(p.total_value) || 0 };
-          fifoDue += dues.due;
-          fifoPaid += dues.paid;
-        });
-      }
-      specificPaid = filteredEntries.reduce((sum, e) => sum + e.debit, 0);
-    } else if (party?.party_type === 'supplier') {
-      const pur = purchases.find(p => p.id === ledgerFilter);
-      if (pur) {
-        const stockMeters = Array.isArray(pur.cloth_stock) ? pur.cloth_stock[0]?.meters_purchased : pur.cloth_stock?.meters_purchased;
-        const meters = pur.meters_purchased || pur.meters || stockMeters || 0;
-        const totalValue = Number(pur.total_amount) || Number(pur.total_value) || (meters * Number(pur.rate || pur.rate_per_meter || 0)) || 0;
-        const dues = supplierPurchaseDues.get(pur.id) || { due: 0, paid: totalValue };
-        fifoDue = dues.due;
-        fifoPaid = dues.paid;
-      }
-      specificPaid = filteredEntries.reduce((sum, e) => sum + e.debit, 0);
-    } else if (party?.party_type === 'customer') {
-      const sale = salesList.find(s => s.id === ledgerFilter);
-      if (sale) {
-        const totalValue = Number(sale.total_amount) || 0;
-        const dues = customerSaleDues.get(sale.id) || { due: 0, paid: totalValue };
-        fifoDue = dues.due;
-        fifoPaid = dues.paid;
-      }
-      specificPaid = filteredEntries.reduce((sum, e) => sum + e.credit, 0);
-    }
-  }
-
-  let virtualEntry: any = null;
-  let finalClosingBalance = closingBalance;
-
-  if (ledgerFilter) {
-    const allocated = fifoPaid - specificPaid;
+  // Check for discrepancy between running balance and current balance due to manual edits
+  const discrepancy = party.current_balance - runningBalance
+  if (Math.abs(discrepancy) > 0.001) {
+    const isCustomer = party.party_type === 'customer'
+    let entryType: 'debit' | 'credit' = 'debit'
     
-    if (Math.abs(allocated) > 0.01) {
-      const isCustomer = party?.party_type === 'customer';
-      virtualEntry = {
-        id: 'virtual-allocation',
-        date: null,
-        particulars: allocated > 0 ? 'Payment' : 'Adjustment',
-        subtext: 'Manual Update',
-        debit: isCustomer ? (allocated < 0 ? Math.abs(allocated) : 0) : (allocated > 0 ? allocated : 0),
-        credit: isCustomer ? (allocated > 0 ? allocated : 0) : (allocated < 0 ? Math.abs(allocated) : 0),
-        isManual: false,
-        originalEntry: {},
-      };
-      
-      const change = getUnifiedBalanceChange(virtualEntry.debit, virtualEntry.credit);
-      virtualEntry.runningBalance = closingBalance + change;
-      finalClosingBalance = virtualEntry.runningBalance;
+    if (isCustomer) {
+      entryType = discrepancy > 0 ? 'debit' : 'credit'
+    } else {
+      entryType = discrepancy > 0 ? 'credit' : 'debit'
     }
+
+    statementRows.push({
+      id: 'manual-adjustment',
+      entry_date: new Date().toISOString().split('T')[0],
+      entry_type: entryType,
+      amount: Math.abs(discrepancy),
+      note: 'Manual balance override from dashboard',
+      related_type: 'adjustment',
+      created_at: new Date().toISOString(),
+      oldBalance: runningBalance,
+      balance: party.current_balance
+    })
   }
 
-  const displayTotalDebit = totalDebit + (virtualEntry?.debit || 0);
-  const displayTotalCredit = totalCredit + (virtualEntry?.credit || 0);
+  // Show oldest entries first (chronological order)
+  const displayRows = statementRows
 
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-        </div>
-      </div>
-    )
-  }
+  const renderNote = (note: string) => {
+    if (!note) return '';
+    
+    let match = note.match(/^(Sale:\s+\d+\s+)(.+?)(\s+@\s+₹[\d.]+\s+each.*)$/);
+    if (match) {
+      return <>{match[1]}<strong className="text-gray-900 font-bold">{match[2]}</strong>{match[3]}</>;
+    }
+    
+    match = note.match(/^((?:Payment for sale|Payment received for sale):\s+)(.+?)(\s*-.*)?$/);
+    if (match) {
+      return <>{match[1]}<strong className="text-gray-900 font-bold">{match[2]}</strong>{match[3] || ''}</>;
+    }
 
-  if (!party) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-6 text-center">
-        <p>Party not found</p>
-      </div>
-    )
-  }
+    return note;
+  };
+
+  // Add Sale Modal Calculations
+  const saleQuantity = parseInt(saleFormData.quantity) || 0
+  const saleRate = parseFloat(saleFormData.rate) || 0
+  const saleTotalAmount = saleQuantity * saleRate
+  const saleOldBalance = party?.current_balance || 0
+  const saleTotalDue = saleOldBalance + saleTotalAmount
+  const salePaidNow = parseFloat(saleFormData.paid_amount) || 0
+  const saleNewBalance = saleTotalDue - salePaidNow
+
+  // Add Production Modal Calculations
+  const productionQuantity = parseInt(productionFormData.output_quantity) || 0
+  const productionRate = parseFloat(productionFormData.rate_per_unit) || 0
+  const productionTotalValue = productionQuantity * productionRate
+  const productionPaidAmount = parseFloat(productionFormData.paid_amount) || 0
+  const productionDueAmount = productionTotalValue - productionPaidAmount
+
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
-      {/* Actions Bar */}
-      <div className="flex justify-between items-center mb-6 no-print">
+    <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
+      <div className="flex justify-between items-start mb-6 print:hidden">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">
+          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-2xl font-bold flex items-center">
-            {party.name}
-            <span className="text-sm font-medium text-gray-500 capitalize px-3 py-1 bg-gray-100 rounded-full ml-3">{party.party_type}</span>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <FileText className="w-6 h-6" />
+            Account Statement
           </h2>
         </div>
         <div className="flex gap-3">
-          {activeTab === 'ledger' && (
-            <>
-              <button onClick={generatePDF} className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg"><Download className="w-4 h-4" /> Download PDF</button>
-              <button onClick={printStatement} className="flex items-center gap-2 border px-4 py-2 rounded-lg"><Printer className="w-4 h-4" /> Print</button>
-            </>
-          )}
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          <button 
+            onClick={() => window.print()} 
+            className="bg-black text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Update Balance (+/-)
+            <Printer className="w-4 h-4" />
+            Print
+          </button>
+          <button 
+            onClick={handleDownloadPDF} 
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Download PDF
           </button>
         </div>
       </div>
 
-      {party.party_type === 'factory' && (
-        <div className="flex gap-2 mb-6 no-print bg-gray-100 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab('factory_records')}
-            className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${activeTab === 'factory_records' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Production & Issues
-          </button>
-          <button
-            onClick={() => { setActiveTab('ledger'); setLedgerFilter(null); }}
-            className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${activeTab === 'ledger' && !ledgerFilter ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Full Financial Ledger
-          </button>
-        </div>
-      )}
-
-      {party.party_type === 'supplier' && (
-        <div className="flex gap-2 mb-6 no-print bg-gray-100 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab('supplier_records')}
-            className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${activeTab === 'supplier_records' ? 'bg-white text-pink-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Purchases & Payments
-          </button>
-          <button
-            onClick={() => { setActiveTab('ledger'); setLedgerFilter(null); }}
-            className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${activeTab === 'ledger' && !ledgerFilter ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Full Financial Ledger
-          </button>
-        </div>
-      )}
-
-      {party.party_type === 'customer' && (
-        <div className="flex gap-2 mb-6 no-print bg-gray-100 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab('customer_records')}
-            className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${activeTab === 'customer_records' ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Sales & Payments
-          </button>
-          <button
-            onClick={() => { setActiveTab('ledger'); setLedgerFilter(null); }}
-            className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${activeTab === 'ledger' && !ledgerFilter ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Full Financial Ledger
-          </button>
-        </div>
-      )}
-
-      {/* Factory Records Content */}
-      {party.party_type === 'factory' && (
-        <div className={activeTab === 'factory_records' ? 'block' : 'hidden'}>
-          <div className="space-y-6">
-            {/* Summary Header */}
-            <div className="bg-purple-50 rounded-xl p-6 border border-purple-100">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-bold text-purple-900 mb-1">Factory Production Status</h3>
-                  <p className="text-sm text-purple-700">Track cloth given, garments received, and payments made.</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-purple-700 font-medium">Overall Balance</p>
-                  <p className={`text-3xl font-bold ${getBalanceColor(party.current_balance)}`}>
-                    ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
-                    <span className="text-sm font-normal ml-1 text-gray-600">
-                      {party.current_balance > 0 ? '(To Pay)' : party.current_balance < 0 ? '(Advance/Credit)' : ''}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-purple-200 flex gap-4">
-                <Link href={`/production/add?factoryId=${party.id}`} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors">
-                  + Log Received Garments
-                </Link>
-                <button onClick={() => setIsAddModalOpen(true)} className="bg-white text-purple-700 border border-purple-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-50 transition-colors">
-                  + Record Payment
-                </button>
-              </div>
-            </div>
-
-            {/* Issues List */}
-            <div className="space-y-4">
-              {issues.map(issue => {
-                const totalGarments = issue.production_records?.reduce((sum: number, r: any) => sum + Number(r.output_quantity), 0) || 0
-                const totalValue = issue.production_records?.reduce((sum: number, r: any) => sum + Number(r.total_value), 0) || 0
-                const totalPaid = issue.production_records?.reduce((sum: number, r: any) => {
-                  const { paid } = factoryProductionDues.get(r.id) || { due: 0, paid: Number(r.total_value) || 0 };
-                  return sum + paid;
-                }, 0) || 0
-
-                return (
-                  <div key={issue.id} className="bg-white rounded-xl border shadow-sm overflow-hidden border-l-4 border-l-purple-500">
-                    <div 
-                      className="p-4 bg-gray-50 border-b flex justify-between items-center cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => togglePanel(issue.id)}
-                    >
-                      <div>
-                        <p className="text-sm text-gray-500">{issue.issue_date ? format(new Date(issue.issue_date), 'dd MMM yyyy') : 'N/A'}</p>
-                        <h4 className="font-bold text-lg text-gray-900">
-                          {issue.cloth_purchase?.cloth_name} {issue.cloth_purchase?.cloth_color && `(${issue.cloth_purchase.cloth_color})`}
-                        </h4>
-                        <p className="text-sm font-medium text-blue-600">Cloth Issued: {issue.meters_given}m</p>
-                      </div>
-                      <div className="text-right flex items-center gap-4">
-                        <div>
-                          <p className="text-sm text-gray-500">Target Product</p>
-                          <p className="font-bold text-gray-900">{issue.product_type || 'Garments'}</p>
-                        </div>
-                        {expandedPanels[issue.id] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                      </div>
-                    </div>
-                    
-                    {expandedPanels[issue.id] && (
-                    <div className="p-4">
-                      <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Garments Received Log</h5>
-                      
-                      {issue.production_records && issue.production_records.length > 0 ? (
-                        <div className="space-y-2 mb-4">
-                          {issue.production_records.map((record: any) => {
-                            const { due, paid } = factoryProductionDues.get(record.id) || { due: 0, paid: Number(record.total_value) || 0 };
-                            return (
-                              <div key={record.id} className="flex justify-between items-center text-sm p-3 bg-white rounded-lg border shadow-sm">
-                                <div>
-                                  <span className="font-bold text-green-600 bg-green-50 px-2 py-1 rounded-md text-base">+{record.output_quantity} pieces</span>
-                                  <p className="text-xs text-gray-500 mt-1">{record.production_date ? format(new Date(record.production_date), 'dd MMM yyyy') : 'N/A'}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-gray-900 font-medium">Value: ₹{Number(record.total_value).toLocaleString('en-IN')}</p>
-                                  {paid > 0 && <p className="text-green-600 text-xs mt-0.5">Paid: ₹{paid.toLocaleString('en-IN')}</p>}
-                                  {due > 0 && <p className="text-red-600 font-bold text-xs mt-0.5">Remaining Due: ₹{due.toLocaleString('en-IN')}</p>}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-500 italic mb-4">No garments received yet for this issue.</p>
-                      )}
-
-                      <div className="flex justify-between items-center pt-3 border-t">
-                        <div className="flex gap-6">
-                          <div><p className="text-xs text-gray-500">Total Received</p><p className="font-bold text-green-600 text-lg">{totalGarments}</p></div>
-                          <div><p className="text-xs text-gray-500">Total Value</p><p className="font-bold text-gray-900 text-lg">₹{totalValue.toLocaleString('en-IN')}</p></div>
-                          <div><p className="text-xs text-gray-500">Total Paid</p><p className="font-bold text-blue-600 text-lg">₹{totalPaid.toLocaleString('en-IN')}</p></div>
-                        </div>
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => {
-                              setLedgerFilter(issue.id)
-                              setActiveTab('ledger')
-                            }}
-                            className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors shadow-sm"
-                          >
-                            View Ledger
-                          </button>
-                          <Link href={`/production/add?issueId=${issue.id}&factoryId=${party.id}`} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-100 transition-colors shadow-sm">+ Receive More</Link>
-                        </div>
-                      </div>
-                    </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Supplier Records Content */}
-      {party.party_type === 'supplier' && (
-        <div className={activeTab === 'supplier_records' ? 'block' : 'hidden'}>
-          <div className="space-y-6">
-            {/* Summary Header */}
-            <div className="bg-pink-50 rounded-xl p-6 border border-pink-100">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-bold text-pink-900 mb-1">Supplier Purchase Status</h3>
-                  <p className="text-sm text-pink-700">Track cloth purchased, values, and payments made.</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-pink-700 font-medium">Overall Balance</p>
-                  <p className={`text-3xl font-bold ${getBalanceColor(party.current_balance)}`}>
-                    ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
-                    <span className="text-sm font-normal ml-1 text-gray-600">
-                      {party.current_balance > 0 ? '(To Pay)' : party.current_balance < 0 ? '(Advance/Credit)' : ''}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-pink-200 flex gap-4">
-                <Link href={`/purchases/add?supplierId=${party.id}`} className="bg-pink-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-pink-700 transition-colors shadow-sm">
-                  + Log New Purchase
-                </Link>
-                <button onClick={() => setIsAddModalOpen(true)} className="bg-white text-pink-700 border border-pink-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-pink-50 transition-colors">
-                  + Record Payment
-                </button>
-              </div>
-            </div>
-
-            {/* Purchases List */}
-            <div className="space-y-4">
-              {purchases.map(purchase => {
-                const stockMeters = Array.isArray(purchase.cloth_stock) ? purchase.cloth_stock[0]?.meters_purchased : purchase.cloth_stock?.meters_purchased
-                const meters = purchase.meters_purchased || purchase.meters || stockMeters || 0
-                const totalValue = Number(purchase.total_amount) || Number(purchase.total_value) || (meters * Number(purchase.rate || purchase.rate_per_meter || 0)) || 0
-                const { due, paid } = supplierPurchaseDues.get(purchase.id) || { due: 0, paid: totalValue };
-
-                return (
-                  <div key={purchase.id} className="bg-white rounded-xl border shadow-sm overflow-hidden border-l-4 border-l-pink-500">
-                    <div 
-                      className="p-4 bg-gray-50 border-b flex justify-between items-center cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => togglePanel(purchase.id)}
-                    >
-                      <div>
-                        <p className="text-sm text-gray-500">{purchase.purchase_date ? format(new Date(purchase.purchase_date), 'dd MMM yyyy') : 'N/A'}</p>
-                        <h4 className="font-bold text-lg text-gray-900">
-                          {purchase.cloth_name} {purchase.cloth_color && `(${purchase.cloth_color})`}
-                        </h4>
-                      </div>
-                      <div className="text-right flex items-center gap-4">
-                        <div>
-                          <p className="font-bold text-gray-900">{meters}m</p>
-                          <p className="text-sm text-gray-500">Quantity</p>
-                        </div>
-                        {expandedPanels[purchase.id] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                      </div>
-                    </div>
-                    
-                    {expandedPanels[purchase.id] && (
-                    <div className="p-4">
-                      <div className="flex justify-between items-center">
-                        <div className="flex gap-6">
-                          <div><p className="text-xs text-gray-500">Total Value</p><p className="font-bold text-gray-900 text-lg">₹{totalValue.toLocaleString('en-IN')}</p></div>
-                          <div><p className="text-xs text-gray-500">Paid</p><p className="font-bold text-green-600 text-lg">₹{paid.toLocaleString('en-IN')}</p></div>
-                          {due > 0 && <div><p className="text-xs text-gray-500">Remaining Due</p><p className="font-bold text-red-600 text-lg">₹{due.toLocaleString('en-IN')}</p></div>}
-                        </div>
-                        <button 
-                          onClick={() => {
-                            setLedgerFilter(purchase.id)
-                            setActiveTab('ledger')
-                          }}
-                          className="bg-pink-50 text-pink-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-pink-100 transition-colors shadow-sm"
-                        >
-                          View Ledger
-                        </button>
-                      </div>
-                    </div>
-                    )}
-                  </div>
-                )
-              })}
-              {purchases.length === 0 && (
-                <p className="text-center text-gray-500 py-8 bg-gray-50 rounded-xl border">No purchases found for this supplier.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Customer Records Content */}
-      {party.party_type === 'customer' && (
-        <div className={activeTab === 'customer_records' ? 'block' : 'hidden'}>
-          <div className="space-y-6">
-            {/* Summary Header */}
-            <div className="bg-orange-50 rounded-xl p-6 border border-orange-100">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-bold text-orange-900 mb-1">Customer Sales Status</h3>
-                  <p className="text-sm text-orange-700">Track garments sold, values, and payments received.</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-orange-700 font-medium">Overall Balance</p>
-                  <p className={`text-3xl font-bold ${getBalanceColor(party.current_balance)}`}>
-                    ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
-                    <span className="text-sm font-normal ml-1 text-gray-600">
-                      {party.current_balance > 0 ? '(To Collect)' : party.current_balance < 0 ? '(Advance)' : ''}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-orange-200 flex gap-4">
-                <Link href={`/sales/add?customerId=${party.id}`} className="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700 transition-colors shadow-sm">
-                  + Log New Sale
-                </Link>
-                <button onClick={() => setIsAddModalOpen(true)} className="bg-white text-orange-700 border border-orange-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-50 transition-colors">
-                  + Record Payment
-                </button>
-              </div>
-            </div>
-
-            {/* Sales List */}
-            <div className="space-y-4">
-              {salesList.map(sale => {
-                const quantity = sale.quantity || 0
-                const totalValue = Number(sale.total_amount) || 0
-                const { due, paid } = customerSaleDues.get(sale.id) || { due: 0, paid: totalValue };
-
-                return (
-                  <div key={sale.id} className="bg-white rounded-xl border shadow-sm overflow-hidden border-l-4 border-l-orange-500">
-                    <div 
-                      className="p-4 bg-gray-50 border-b flex justify-between items-center cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => togglePanel(sale.id)}
-                    >
-                      <div>
-                        <p className="text-sm text-gray-500">{sale.sale_date ? format(new Date(sale.sale_date), 'dd MMM yyyy') : 'N/A'}</p>
-                        <h4 className="font-bold text-lg text-gray-900">
-                          {sale.product_type}
-                        </h4>
-                      </div>
-                      <div className="text-right flex items-center gap-4">
-                        <div>
-                          <p className="font-bold text-gray-900">{quantity} pieces</p>
-                          <p className="text-sm text-gray-500">Quantity</p>
-                        </div>
-                        {expandedPanels[sale.id] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                      </div>
-                    </div>
-                    
-                    {expandedPanels[sale.id] && (
-                    <div className="p-4">
-                      <div className="flex justify-between items-center">
-                        <div className="flex gap-6">
-                          <div><p className="text-xs text-gray-500">Total Value</p><p className="font-bold text-gray-900 text-lg">₹{totalValue.toLocaleString('en-IN')}</p></div>
-                          <div><p className="text-xs text-gray-500">Paid</p><p className="font-bold text-green-600 text-lg">₹{paid.toLocaleString('en-IN')}</p></div>
-                          {due > 0 && <div><p className="text-xs text-gray-500">Remaining Due</p><p className="font-bold text-red-600 text-lg">₹{due.toLocaleString('en-IN')}</p></div>}
-                        </div>
-                        <button 
-                          onClick={() => {
-                            setLedgerFilter(sale.id)
-                            setActiveTab('ledger')
-                          }}
-                          className="bg-orange-50 text-orange-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-orange-100 transition-colors shadow-sm"
-                        >
-                          View Ledger
-                        </button>
-                      </div>
-                    </div>
-                    )}
-                  </div>
-                )
-              })}
-              {salesList.length === 0 && (
-                <p className="text-center text-gray-500 py-8 bg-gray-50 rounded-xl border">No sales found for this customer.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Statement Content */}
-      <div className={activeTab === 'ledger' ? 'block' : 'hidden'}>
-        
-        {ledgerFilter && (
-          <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg mb-6 flex justify-between items-center no-print">
-            <span className="font-medium">Viewing filtered ledger statement for selected record.</span>
-            <button onClick={() => setLedgerFilter(null)} className="text-blue-600 hover:text-blue-800 font-bold text-sm bg-blue-100 px-3 py-1 rounded-md transition-colors">
-              Clear Filter
-            </button>
-          </div>
-        )}
-
-        <div ref={statementRef} className="bg-white rounded-xl shadow-sm border p-8 print:p-4">
-        {/* Header */}
-        <div className="text-center mb-8 border-b pb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">StitchBook</h1>
-          <p className="text-gray-600">
-            {ledgerFilter ? 'Filtered Account Statement' : 'Account Statement'}
-          </p>
+      <div id="statement-content" className="bg-white rounded-xl border p-6 mb-6">
+        {/* Statement Header */}
+        <div className="flex flex-col items-center justify-center border-b pb-6 mb-6">
+          <img src="/icon.png" alt="IZTEXPORT" className="w-24 h-24 object-contain mb-2" />
+          <h1 className="text-2xl font-bold tracking-widest text-gray-900 uppercase">IZTEXPORT</h1>
         </div>
 
-        {/* Party Info */}
-        <div className="grid grid-cols-2 gap-6 mb-8">
+        <div className="flex justify-between items-start border-b pb-4 mb-4">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{party.name}</h2>
-            <p className="text-gray-600 capitalize">{party.party_type}</p>
-            {party.phone && <p className="text-gray-600">📱 {party.phone}</p>}
-            {party.address && <p className="text-gray-600">📍 {party.address}</p>}
+            <h2 className="text-3xl font-bold text-gray-900">{party.name}</h2>
+            <p className="text-gray-500 capitalize mt-1">{party.party_type}</p>
+            {party.phone && <p className="text-gray-600 mt-1">Phone: {party.phone}</p>}
+            {party.address && <p className="text-gray-600">Address: {party.address}</p>}
           </div>
-          <div className="text-right">
-            {!ledgerFilter ? (
-              <>
-                <p className="text-sm text-gray-500">Opening Balance</p>
-                <p className="text-lg font-bold">₹{party.opening_balance.toLocaleString('en-IN')}</p>
-                <p className="text-sm text-gray-500 mt-4">Closing Balance</p>
-                <p className={`text-lg font-bold ${getBalanceColor(party.current_balance)}`}>
-                  ₹{party.current_balance.toLocaleString('en-IN')}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-gray-500">Sub-ledger Balance</p>
-                <p className={`text-xl font-bold ${getBalanceColor(finalClosingBalance)}`}>
-                  ₹{finalClosingBalance.toLocaleString('en-IN')}
-                </p>
-              </>
-            )}
+          <div className="text-right flex flex-col items-end">
+            <p className="text-sm text-gray-500">Current Balance</p>
+            <p className={`text-3xl font-bold ${party.current_balance > 0 ? (party.party_type === 'customer' ? 'text-green-600' : 'text-red-600') : party.current_balance < 0 ? (party.party_type === 'customer' ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
+              ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
+            </p>
+            <div className="flex flex-col gap-2 mt-3 print:hidden" data-html2canvas-ignore="true">
+              {party.party_type === 'customer' && (
+                <button 
+                  onClick={openAddSaleModal}
+                  className="text-sm bg-black text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add+ Sale
+                </button>
+              )}
+              {party.party_type === 'factory' && (
+                <button 
+                  onClick={openAddProductionModal}
+                  className="text-sm bg-black text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add+ Output
+                </button>
+              )}
+              <button 
+                onClick={() => setIsUpdateModalOpen(true)}
+                className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+              >
+                +/- Update Balance
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Transactions Table */}
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b-2 border-gray-200">
-                <th className="text-left py-3 px-2 text-sm font-semibold text-gray-600">Date</th>
-                <th className="text-left py-3 px-2 text-sm font-semibold text-gray-600">Particulars</th>
-                <th className="text-right py-3 px-2 text-sm font-semibold text-gray-600">Debit (₹)</th>
-                <th className="text-right py-3 px-2 text-sm font-semibold text-gray-600">Credit (₹)</th>
-                <th className="text-right py-3 px-2 text-sm font-semibold text-gray-600">Balance (₹)</th>
-                <th className="text-right py-3 px-2 text-sm font-semibold text-gray-600 no-print" data-html2canvas-ignore="true">Actions</th>
+              <tr className="border-b bg-gray-50 text-sm">
+                <th className="p-3 font-semibold text-gray-600">Date</th>
+                <th className="p-3 font-semibold text-gray-600">Particulars</th>
+                <th className="p-3 font-semibold text-gray-600 text-right">Bill Amount (₹)</th>
+                <th className="p-3 font-semibold text-gray-600 text-right">Transfer / Cash (₹)</th>
+                <th className="p-3 font-semibold text-gray-600 text-right">Balance (₹)</th>
               </tr>
             </thead>
             <tbody>
-              {/* Opening Balance Row */}
-              {!ledgerFilter && (
-                <tr className="border-b border-gray-100">
-                  <td className="py-3 px-2 text-sm text-gray-500">-</td>
-                  <td className="py-3 px-2 text-sm font-medium">Opening Balance</td>
-                  <td className="py-3 px-2 text-right text-sm"></td>
-                  <td className="py-3 px-2 text-right text-sm"></td>
-                  <td className="py-3 px-2 text-right text-sm font-bold">
-                    ₹{openingBalance.toLocaleString('en-IN')}
-                  </td>
-                  <td className="no-print" data-html2canvas-ignore="true"></td>
-                </tr>
-              )}
-
-              {/* Ledger Entries */}
-              {entriesWithBalance.map((entry) => {
-                return (
-                  editingEntryId === entry.id ? (
-                    <tr key={entry.id} className="bg-blue-50">
-                      <td className="py-2 px-2">
-                        <input type="date" value={editingData.date} onChange={(e) => setEditingData({...editingData, date: e.target.value})} className="w-full p-1 border rounded-md"/>
-                      </td>
-                      <td className="py-2 px-2">
-                        <input type="text" value={editingData.note} onChange={(e) => setEditingData({...editingData, note: e.target.value})} className="w-full p-1 border rounded-md"/>
-                      </td>
-                      <td className="py-2 px-2 text-right text-sm">
-                        {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN')}` : '-'}
-                      </td>
-                      <td className="py-2 px-2 text-right text-sm">
-                        {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN')}` : '-'}
-                      </td>
-                      <td className="py-2 px-2 text-right text-sm font-semibold">
-                        ₹{entry.runningBalance.toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-2 px-2 text-right no-print" data-html2canvas-ignore="true">
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => handleSaveEdit()} className="p-2 text-green-600 hover:bg-green-100 rounded-full"><Save className="w-4 h-4"/></button>
-                          <button onClick={handleCancelEdit} className="p-2 text-red-600 hover:bg-red-100 rounded-full"><X className="w-4 h-4"/></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-2 text-sm">
-                        {entry.date ? format(new Date(entry.date), 'dd/MM/yyyy') : '-'}
-                      </td>
-                      <td className="py-3 px-2 text-sm">
-                        <p className="font-medium">{entry.particulars}</p>
-                        <p className="text-xs text-gray-500 capitalize">{entry.subtext}</p>
-                      </td>
-                      <td className="py-3 px-2 text-right text-sm">
-                        {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN')}` : '-'}
-                      </td>
-                      <td className="py-3 px-2 text-right text-sm">
-                        {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN')}` : '-'}
-                      </td>
-                      <td className={`py-3 px-2 text-right text-sm font-semibold ${getBalanceColor(entry.runningBalance)}`}>
-                        ₹{entry.runningBalance.toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-3 px-2 text-right no-print" data-html2canvas-ignore="true">
-                        <div className="flex justify-end gap-1">
-                          {entry.isManual && (
-                            <>
-                              <button onClick={() => handleEditClick(entry)} className="p-2 text-gray-400 hover:text-black hover:bg-gray-100 rounded-full" title="Edit"><Edit2 className="w-4 h-4"/></button>
-                              <button onClick={() => handleDeleteTransaction(entry.originalEntry)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded-full" title="Delete"><Trash2 className="w-4 h-4"/></button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                )
-              })}
-
-              {/* Virtual Entry if present */}
-              {virtualEntry && (
-                <tr className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-2 text-sm text-center">-</td>
-                  <td className="py-3 px-2 text-sm">
-                    <p className="font-medium text-gray-900">{virtualEntry.particulars}</p>
-                    <p className="text-xs text-gray-500">{virtualEntry.subtext}</p>
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm">
-                    {virtualEntry.debit > 0 ? `₹${virtualEntry.debit.toLocaleString('en-IN')}` : '-'}
-                  </td>
-                  <td className="py-3 px-2 text-right text-sm">
-                    {virtualEntry.credit > 0 ? `₹${virtualEntry.credit.toLocaleString('en-IN')}` : '-'}
-                  </td>
-                  <td className={`py-3 px-2 text-right text-sm font-semibold ${getBalanceColor(virtualEntry.runningBalance)}`}>
-                    ₹{virtualEntry.runningBalance.toLocaleString('en-IN')}
-                  </td>
-                  <td className="no-print" data-html2canvas-ignore="true"></td>
-                </tr>
-              )}
-
-            </tbody>
-
-            {/* Totals */}
-            <tfoot>
-              <tr className="border-t-2 border-gray-300 font-bold">
-                <td colSpan={2} className="py-3 px-2 text-sm">Total Transactions</td>
-                <td className="py-3 px-2 text-right text-sm">₹{displayTotalDebit.toLocaleString('en-IN')}</td>
-                <td className="py-3 px-2 text-right text-sm">₹{displayTotalCredit.toLocaleString('en-IN')}</td>
-                <td className={`py-3 px-2 text-right text-sm font-bold ${getBalanceColor(finalClosingBalance)}`}>
-                  ₹{finalClosingBalance.toLocaleString('en-IN')}
+              <tr className="border-b-2 border-gray-300 bg-gray-100">
+                <td colSpan={2} className="p-3 font-bold text-gray-900 text-right">Opening Balance</td>
+                <td colSpan={2} className="p-3"></td>
+                <td className="p-3 text-right font-bold text-gray-900">
+                  ₹{Math.abs(party.opening_balance || 0).toLocaleString('en-IN')}
                 </td>
-                <td className="no-print" data-html2canvas-ignore="true"></td>
               </tr>
-            </tfoot>
+              
+              {displayRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-4 text-center text-gray-500">No transactions found</td>
+                </tr>
+              ) : (
+                displayRows.map((row, index) => {
+                  const isNewSale = row.related_type === 'sale';
+                  const needsDivider = isNewSale && index > 0;
+                  const isCustomer = party.party_type === 'customer';
+                  
+                  const billAmount = isCustomer 
+                    ? (row.entry_type === 'debit' ? row.amount : null)
+                    : (row.entry_type === 'credit' ? row.amount : null);
+                  
+                  const paymentAmount = isCustomer
+                    ? (row.entry_type === 'credit' ? row.amount : null)
+                    : (row.entry_type === 'debit' ? row.amount : null);
+                  
+                  return (
+                    <React.Fragment key={row.id}>
+                      {needsDivider && (
+                        <tr>
+                          <td colSpan={5} className="h-4 bg-gray-100 border-y border-gray-200"></td>
+                        </tr>
+                      )}
+                      <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                    <td className="p-3 whitespace-nowrap text-sm">
+                      {new Date(row.entry_date).toLocaleDateString('en-IN', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </td>
+                    <td className="p-3">
+                      <p className="font-semibold text-gray-900 capitalize">{row.related_type}</p>
+                      <p className="text-sm text-gray-500">{renderNote(row.note)}</p>
+                      {billAmount !== null && row.related_type !== 'adjustment' && (
+                        <p className="text-xs font-medium text-gray-600 mt-1 bg-red-50 inline-block px-2 py-0.5 rounded border border-red-100">
+                          Old Balance: ₹{Math.abs(row.oldBalance).toLocaleString('en-IN')} + Bill: ₹{billAmount.toLocaleString('en-IN')} = Total: ₹{Math.abs(row.balance).toLocaleString('en-IN')}
+                        </p>
+                      )}
+                      {paymentAmount !== null && row.related_type !== 'adjustment' && (
+                        <p className="text-xs font-medium text-gray-600 mt-1 bg-green-50 inline-block px-2 py-0.5 rounded border border-green-100">
+                          Old Balance: ₹{Math.abs(row.oldBalance).toLocaleString('en-IN')} - Paid: ₹{paymentAmount.toLocaleString('en-IN')} = Total: ₹{Math.abs(row.balance).toLocaleString('en-IN')}
+                        </p>
+                      )}
+                    </td>
+                    <td className="p-3 text-right text-red-600 font-medium">
+                      {billAmount !== null ? '₹' + billAmount.toLocaleString('en-IN') : '-'}
+                    </td>
+                    <td className="p-3 text-right text-green-600 font-medium">
+                      {paymentAmount !== null ? '₹' + paymentAmount.toLocaleString('en-IN') : '-'}
+                    </td>
+                    <td className="p-3 text-right font-bold text-gray-900">
+                      ₹{Math.abs(row.balance).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                    </React.Fragment>
+                  )
+                })
+              )}
+              <tr className="border-t-2 border-gray-300 bg-gray-100 print:bg-gray-100">
+                <td colSpan={2} className="p-3 font-bold text-gray-900 text-right">Closing Balance</td>
+                <td colSpan={2} className="p-3"></td>
+                <td className="p-3 text-right font-bold text-gray-900">
+                  ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
+                </td>
+              </tr>
+            </tbody>
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="mt-12 pt-8 border-t">
-          <div className="grid grid-cols-2 gap-8">
-            <div>
-              <p className="text-sm text-gray-500">Generated on: {format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Authorized Signature</p>
-              <div className="mt-8 border-b border-gray-300"></div>
-            </div>
+        {/* Statement Footer */}
+        <div className="mt-12 pt-8 border-t flex flex-col sm:flex-row justify-between items-end gap-8">
+          <div className="text-[10px] text-gray-500 max-w-md text-justify leading-tight">
+            <strong className="block text-gray-700 mb-1 text-xs uppercase">Terms & Conditions</strong>
+            At IZTEXPORT, we sincerely value and appreciate the trust and support of our customers; as we manage cloth sourcing, garment manufacturing through factories, and timely supply operations, we kindly request all payments to be made on time for smooth business flow. A 5% tax will be applicable for bill generation for customers.
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="h-16 w-48 border-b-2 border-gray-300 border-dashed mb-2"></div>
+            <p className="font-bold text-gray-800 uppercase text-sm tracking-widest">IZTEXPORT</p>
+            <p className="text-xs text-gray-500">Authorized Signature</p>
           </div>
         </div>
       </div>
-      </div>
 
-      {/* Add Transaction Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      {/* Update Balance Modal */}
+      {isUpdateModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold">Update Balance</h3>
-              <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <button onClick={() => setIsUpdateModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1185,70 +971,479 @@ export default function StatementPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Transaction Type</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <button
-                    type="button"
-                    onClick={() => setNewTx({...newTx, type: 'credit'})}
-                    className={`py-2 px-4 rounded-lg border text-sm font-medium transition-colors ${
-                      newTx.type === 'credit' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    onClick={() => setUpdateType('receive')}
+                    className={`py-2 px-4 rounded-lg border font-medium flex justify-center items-center gap-2 ${
+                      updateType === 'receive' 
+                        ? 'bg-green-50 border-green-500 text-green-700' 
+                        : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    {party?.party_type === 'customer' ? 'Receive Payment (-)' : 'Add Bill / Due (+)'}
+                    <span className="text-lg">+</span> Receive Money
                   </button>
                   <button
-                    type="button"
-                    onClick={() => setNewTx({...newTx, type: 'debit'})}
-                    className={`py-2 px-4 rounded-lg border text-sm font-medium transition-colors ${
-                      newTx.type === 'debit' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    onClick={() => setUpdateType('give')}
+                    className={`py-2 px-4 rounded-lg border font-medium flex justify-center items-center gap-2 ${
+                      updateType === 'give' 
+                        ? 'bg-red-50 border-red-500 text-red-700' 
+                        : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    {party?.party_type === 'customer' ? 'Give Payment (+)' : 'Give Payment (-)'}
+                    <span className="text-lg">-</span> Give Money
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  {party?.party_type === 'customer' 
-                    ? (newTx.type === 'credit' 
-                    ? 'This will decrease their outstanding balance.' 
-                      : 'This will increase their outstanding balance.')
-                    : (newTx.type === 'debit'
-                      ? 'This will decrease what you owe them.'
-                      : 'This will increase what you owe them.')}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
-                <input type="number" value={newTx.amount} onChange={(e) => setNewTx({...newTx, amount: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-black outline-none" placeholder="0.00" />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input type="date" value={newTx.date} onChange={(e) => setNewTx({...newTx, date: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-black outline-none" />
+                <input 
+                  type="date" 
+                  value={updateDate}
+                  onChange={(e) => setUpdateDate(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note (Optional)</label>
-                <input type="text" value={newTx.note} onChange={(e) => setNewTx({...newTx, note: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-black outline-none" placeholder="e.g., Cash payment, Bank transfer..." />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  value={updateAmount}
+                  onChange={(e) => setUpdateAmount(e.target.value)}
+                  placeholder="Enter amount"
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
               </div>
 
-              <div className="pt-4 flex gap-3">
-                <button onClick={() => setIsAddModalOpen(false)} className="flex-1 px-4 py-2 border rounded-xl hover:bg-gray-50 font-medium">Cancel</button>
-                <button onClick={handleAddTransaction} disabled={isAdding} className="flex-1 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 disabled:opacity-50 font-medium">
-                  {isAdding ? 'Saving...' : 'Save Transaction'}
-                </button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note / Particulars (Optional)</label>
+                <input 
+                  type="text" 
+                  value={updateNote}
+                  onChange={(e) => setUpdateNote(e.target.value)}
+                  placeholder="e.g. Cash payment, Bank transfer"
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
               </div>
+            </div>
+
+            <div className="pt-4 mt-6 border-t flex justify-end gap-3">
+              <button 
+                onClick={() => setIsUpdateModalOpen(false)}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleUpdateBalance}
+                disabled={isUpdating || !updateAmount}
+                className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+              >
+                {isUpdating ? 'Saving...' : 'Confirm Update'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      <style jsx global>{`
-        @media print {
-          .no-print { display: none !important; }
-          body { background: white; }
-          .max-w-4xl { max-width: 100% !important; }
-        }
-      `}</style>
+      {/* Add Production Modal */}
+      {isAddProductionModalOpen && party && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Add Production for {party.name}</h3>
+              <button onClick={() => setIsAddProductionModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddProduction} className="space-y-4">
+              {/* Select Cloth Issue */}
+              <div className="bg-white rounded-xl p-4 border">
+                <label className="block text-sm font-medium mb-3 flex items-center gap-2">
+                  <Package className="w-4 h-4" />
+                  Select Issued Cloth or Available Stock *
+                </label>
+                
+                {issuesLoading ? (
+                  <p className="text-center py-4 text-gray-500">Loading...</p>
+                ) : (clothIssues.length === 0 && clothStocks.length === 0) ? (
+                  <p className="text-center py-4 text-gray-500">No cloth available.</p>
+                ) : (
+                  <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                    {clothIssues.length > 0 && (
+                      <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-2">Currently Issued to {party.name}</div>
+                    )}
+                    {clothIssues.map(issue => (
+                      <div
+                        key={issue.id}
+                        onClick={() => handleIssueSelect(issue, null)}
+                        className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                          selectedIssue?.id === issue.id
+                            ? 'border-black bg-gray-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {issue.cloth_purchase?.color_image_url && (
+                          <img src={issue.cloth_purchase.color_image_url} alt={issue.cloth_purchase.cloth_color} className="w-12 h-12 object-cover rounded-lg" />
+                        )}
+                        <div className="flex-1">
+                          <p className="font-medium">
+                            {issue.cloth_purchase?.cloth_name}
+                            {issue.cloth_purchase?.cloth_color && ` - ${issue.cloth_purchase.cloth_color}`}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Issued: {issue.meters_given}m • {issue.product_type || 'No product specified'}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {new Date(issue.issue_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemoveIssue(issue.id, e)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remove from active list"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {clothStocks.length > 0 && (
+                      <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4 pt-4 border-t">Available Raw Stock</div>
+                    )}
+                    {clothStocks.map(stock => (
+                      <div
+                        key={stock.id}
+                        onClick={() => handleIssueSelect(null, stock)}
+                        className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                          selectedStock?.id === stock.id
+                            ? 'border-black bg-gray-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {stock.purchase?.color_image_url ? (
+                          <img src={stock.purchase.color_image_url} alt={stock.cloth_color} className="w-12 h-12 object-cover rounded-lg" />
+                        ) : (
+                           <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <Package className="w-6 h-6 text-gray-400" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="font-medium">
+                            {stock.cloth_name}
+                            {stock.cloth_color && ` - ${stock.cloth_color}`}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Available: {stock.meters_remaining}m
+                          </p>
+                        </div>
+                        <div className="text-right">
+                           <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Raw Stock</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedStock && (
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-blue-900">Meters to Issue for this Production *</label>
+                    <input type="number" required min="0.01" max={selectedStock.meters_remaining} step="0.01" placeholder="Enter meters used" value={metersToIssue} onChange={(e) => setMetersToIssue(e.target.value)} className="w-full px-3 py-3 border rounded-lg border-blue-200 focus:ring-blue-500" />
+                    <p className="text-xs text-blue-600 mt-1">
+                      This will automatically issue the cloth from raw stock to {party.name} and record the production.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Production Details */}
+              {(selectedIssue || selectedStock) && (
+                <div className="bg-white rounded-xl p-4 border space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Product Type</label>
+                    <input type="text" required placeholder="e.g., Shirts, Pants" value={productionFormData.product_type} onChange={(e) => setProductionFormData({ ...productionFormData, product_type: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Quantity Produced *</label>
+                      <input type="number" required min="1" placeholder="0" value={productionFormData.output_quantity} onChange={(e) => setProductionFormData({ ...productionFormData, output_quantity: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Unit</label>
+                      <select value={productionFormData.output_unit} onChange={(e) => setProductionFormData({ ...productionFormData, output_unit: e.target.value })} className="w-full px-3 py-3 border rounded-lg bg-white">
+                        <option value="pieces">Pieces</option>
+                        <option value="sets">Sets</option>
+                        <option value="pairs">Pairs</option>
+                        <option value="meters">Meters</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Rate Per Unit (₹) *</label>
+                    <input type="number" required min="0" step="0.01" placeholder="0.00" value={productionFormData.rate_per_unit} onChange={(e) => setProductionFormData({ ...productionFormData, rate_per_unit: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
+                  </div>
+
+                  {productionTotalValue > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Total Production Value</span>
+                        <span className="text-lg font-bold">₹{productionTotalValue.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
+                    <input type="number" min="0" max={productionTotalValue} step="0.01" value={productionFormData.paid_amount} onChange={(e) => setProductionFormData({ ...productionFormData, paid_amount: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
+                    {productionTotalValue > 0 && (
+                      <p className="text-sm text-orange-600 mt-1">
+                        Due after payment: ₹{productionDueAmount.toLocaleString('en-IN')}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Production Date *</label>
+                    <input type="date" required value={productionFormData.production_date} onChange={(e) => setProductionFormData({ ...productionFormData, production_date: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Note</label>
+                    <textarea rows={2} placeholder="Quality check notes, defects, etc." value={productionFormData.note} onChange={(e) => setProductionFormData({ ...productionFormData, note: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 mt-6 border-t flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAddProductionModalOpen(false)}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isUpdating || (!selectedIssue && !selectedStock)}
+                  className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {isUpdating ? 'Recording...' : 'Record Production'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Sale Modal */}
+      {isAddSaleModalOpen && party && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Add Sale to {party.name}</h3>
+              <button onClick={() => setIsAddSaleModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddSale} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Product Type *</label>
+                <div className="relative">
+                  <div className="flex gap-2 items-center">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder={productsLoading ? 'Loading products...' : 'Search or enter new product...'}
+                        value={productSearchQuery}
+                        onChange={(e) => {
+                          setProductSearchQuery(e.target.value)
+                          setShowProductDropdown(true)
+                          if (saleFormData.product_type) setSaleFormData({ ...saleFormData, product_type: '' })
+                          if (isNewProduct) setIsNewProduct(false)
+                        }}
+                        onFocus={() => setShowProductDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowProductDropdown(false), 200)}
+                        className="w-full pl-10 pr-3 py-3 border rounded-lg bg-white focus:ring-2 focus:ring-black outline-none"
+                        disabled={productsLoading}
+                        required
+                      />
+                    </div>
+                    {saleFormData.product_type && !isNewProduct && (
+                      <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium whitespace-nowrap">
+                        ✓ In Stock
+                      </span>
+                    )}
+                    {isNewProduct && (
+                      <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium whitespace-nowrap flex items-center justify-center">
+                        <ArrowRight className="w-4 h-4 mr-1" /> New
+                      </span>
+                    )}
+                  </div>
+
+                  {showProductDropdown && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {productStocks
+                        .filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase()))
+                        .map(stock => (
+                          <button type="button" key={stock.product_type} onClick={() => {
+                            setSaleFormData({ ...saleFormData, product_type: stock.product_type })
+                            setProductSearchQuery(stock.product_type)
+                            setShowProductDropdown(false)
+                          }} className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0">
+                            <div className="font-medium">{stock.product_type}</div>
+                            <div className="text-sm text-gray-500">Available: {stock.quantity}</div>
+                          </button>
+                        ))}
+                      {productSearchQuery.trim() && !productStocks.some(p => p.product_type.toLowerCase() === productSearchQuery.toLowerCase()) && (
+                        <button type="button" onClick={() => {
+                          const newProduct = productSearchQuery.trim()
+                          const capitalizedNewProduct = newProduct.charAt(0).toUpperCase() + newProduct.slice(1).toLowerCase()
+                          setSaleFormData({ ...saleFormData, product_type: capitalizedNewProduct })
+                          setProductSearchQuery(capitalizedNewProduct)
+                          setShowProductDropdown(false)
+                        }} className="w-full text-left px-4 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">
+                          + Add "{productSearchQuery.trim()}" as new product
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sale Summary */}
+              {(saleTotalAmount > 0 || saleOldBalance !== 0) && (
+                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">New Sale Amount</span>
+                    <span className="font-semibold">₹{saleTotalAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Previous Dues</span>
+                    <span className={`font-semibold ${saleOldBalance > 0 ? 'text-green-600' : saleOldBalance < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                      ₹{Math.abs(saleOldBalance).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between">
+                    <span className="text-gray-900 font-medium">Total Due</span>
+                    <span className="text-lg font-bold">
+                      ₹{Math.abs(saleTotalDue).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Quantity *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max={productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity}
+                    placeholder="0"
+                    value={saleFormData.quantity}
+                    onChange={(e) => setSaleFormData({ ...saleFormData, quantity: e.target.value })}
+                    className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                  />
+                  {saleFormData.product_type && !isNewProduct && (
+                    <div className="flex justify-between items-center mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-md border">
+                      <span>In Stock: <span className="font-bold text-gray-800">{productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity || 0}</span></span>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Rate/Piece (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={saleFormData.rate}
+                    onChange={(e) => setSaleFormData({ ...saleFormData, rate: e.target.value })}
+                    className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Amount Received Now (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={saleFormData.paid_amount}
+                    onChange={(e) => setSaleFormData({ ...saleFormData, paid_amount: e.target.value })}
+                    className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Sale Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={saleFormData.sale_date}
+                    onChange={(e) => setSaleFormData({ ...saleFormData, sale_date: e.target.value })}
+                    className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* New Balance Preview */}
+              {(saleTotalAmount > 0 || saleOldBalance !== 0) && (
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-blue-900 font-medium">Final Statement Balance</span>
+                    <span className={`text-lg font-bold ${saleNewBalance > 0 ? 'text-green-600' : saleNewBalance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                      ₹{Math.abs(saleNewBalance).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Note (Optional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Any additional notes..."
+                  value={saleFormData.note}
+                  onChange={(e) => setSaleFormData({ ...saleFormData, note: e.target.value })}
+                  className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+
+              <div className="pt-4 mt-6 border-t flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAddSaleModalOpen(false)}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isUpdating || !saleFormData.product_type}
+                  className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {isUpdating ? 'Recording...' : 'Record Sale'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

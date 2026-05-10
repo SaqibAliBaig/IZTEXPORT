@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Search, DollarSign, ArrowDownRight, ArrowUpRight, Users, Factory, Package, ArrowLeft } from 'lucide-react'
+import { Search, DollarSign, ArrowDownRight, ArrowUpRight, Users, Factory, Package, ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -11,7 +11,7 @@ interface Payment {
   amount: number
   payment_date: string
   payment_mode: string
-  note: string
+  note?: string
   party_name: string
   party_type: string
   party_id: string
@@ -32,6 +32,8 @@ export default function PaymentsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState<'all' | 'this_month' | 'last_month'>('all')
   const [balanceFilter, setBalanceFilter] = useState<'all' | 'receivables' | 'payables'>('all')
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'received' | 'paid'>('all')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -98,8 +100,22 @@ export default function PaymentsPage() {
       }
     }
 
-    return matchesSearch && matchesDate && matchesBalance
-  }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    let matchesType = true
+    if (paymentTypeFilter === 'received') {
+      matchesType = payment.party_type === 'customer'
+    } else if (paymentTypeFilter === 'paid') {
+      matchesType = payment.party_type !== 'customer'
+    }
+
+    return matchesSearch && matchesDate && matchesBalance && matchesType
+  }).sort((a, b) => {
+    const dateA = new Date(a.payment_date).getTime()
+    const dateB = new Date(b.payment_date).getTime()
+    if (dateA !== dateB) {
+      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB
+    }
+    return sortOrder === 'desc' ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime() : new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  })
 
   let totalReceivables = 0
   let totalPayables = 0
@@ -284,29 +300,8 @@ export default function PaymentsPage() {
       )}
 
       {/* Filters and Search */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="flex bg-white rounded-xl border p-1 overflow-x-auto">
-          <button
-            onClick={() => setDateFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'all' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            All Time
-          </button>
-          <button
-            onClick={() => setDateFilter('this_month')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'this_month' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            This Month
-          </button>
-          <button
-            onClick={() => setDateFilter('last_month')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'last_month' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            Last Month
-          </button>
-        </div>
-
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="relative w-full">
           <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
           <input
             type="text"
@@ -315,6 +310,65 @@ export default function PaymentsPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none"
           />
+        </div>
+
+        <div className="flex flex-wrap gap-4">
+          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto">
+            <button
+              onClick={() => setDateFilter('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'all' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              All Time
+            </button>
+            <button
+              onClick={() => setDateFilter('this_month')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'this_month' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setDateFilter('last_month')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'last_month' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Last Month
+            </button>
+          </div>
+
+          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto">
+            <button
+              onClick={() => setPaymentTypeFilter('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentTypeFilter === 'all' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              All Types
+            </button>
+            <button
+              onClick={() => setPaymentTypeFilter('received')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentTypeFilter === 'received' ? 'bg-green-600 text-white' : 'text-gray-600 hover:bg-green-50'}`}
+            >
+              Received
+            </button>
+            <button
+              onClick={() => setPaymentTypeFilter('paid')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentTypeFilter === 'paid' ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-red-50'}`}
+            >
+              Paid
+            </button>
+          </div>
+
+          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto">
+            <button
+              onClick={() => setSortOrder('desc')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${sortOrder === 'desc' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Newest First
+            </button>
+            <button
+              onClick={() => setSortOrder('asc')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${sortOrder === 'asc' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Oldest First
+            </button>
+          </div>
         </div>
       </div>
 
@@ -333,7 +387,7 @@ export default function PaymentsPage() {
       ) : (
         <div className="grid gap-4">
           {filteredPayments.map(payment => (
-            <div key={payment.id} className="bg-white rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md">
+            <div key={payment.id} className="relative group bg-white rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md">
               <div className="flex items-center gap-4">
                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${
                   payment.party_type === 'customer' ? 'bg-orange-50 text-orange-500' :
@@ -354,9 +408,6 @@ export default function PaymentsPage() {
                   <p className="text-sm text-gray-600 capitalize">
                     Mode: {payment.payment_mode.replace('_', ' ')}
                   </p>
-                  {payment.note && (
-                    <p className="text-xs text-gray-500 mt-0.5">{payment.note}</p>
-                  )}
                 </div>
               </div>
               <div className="text-right">
@@ -365,10 +416,22 @@ export default function PaymentsPage() {
                 }`}>
                   {payment.party_type === 'customer' ? '+' : '-'}₹{Math.abs(payment.amount).toLocaleString('en-IN')}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {new Date(payment.payment_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}
-                </p>
+                <div className="flex items-center justify-end gap-1 mt-0.5 text-xs text-gray-500">
+                  <span>{new Date(payment.payment_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  {payment.note && (
+                    <FileText className="w-3.5 h-3.5 text-gray-400" />
+                  )}
+                </div>
               </div>
+
+              {/* Tooltip for Note */}
+              {payment.note && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                  <span className="font-semibold text-gray-300">Note:</span> {payment.note}
+                  {/* Tooltip downward arrow */}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                </div>
+              )}
             </div>
           ))}
         </div>

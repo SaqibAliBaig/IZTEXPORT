@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { Plus, Search, Factory, Calendar, Box, Shirt, DollarSign, ArrowLeft } from 'lucide-react'
+import { Plus, Search, Factory, Calendar, Box, Shirt, DollarSign, ArrowLeft, FileText } from 'lucide-react'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
 
@@ -17,6 +17,7 @@ interface ProductionRecord {
   paid_amount: number
   due_amount: number
   production_date: string
+  note?: string
   created_at: string
   factory: { name: string }
 }
@@ -184,7 +185,7 @@ export default function ProductionPage() {
           </div>
         ) : (
           filteredRecords.map(record => (
-            <div key={record.id} className="bg-white rounded-xl border p-4 transition-all hover:border-gray-400 hover:shadow-md">
+          <div key={record.id} className="relative group bg-white rounded-xl border p-4 transition-all hover:border-gray-400 hover:shadow-md">
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-lg">{record.factory?.name}</h3>
@@ -204,7 +205,19 @@ export default function ProductionPage() {
               <div className="flex items-center gap-2 mt-3 text-sm text-gray-500">
                 <Calendar className="w-4 h-4" />
                 {format(new Date(record.production_date), 'dd MMM yyyy')}
+                {record.note && (
+                  <FileText className="w-4 h-4 text-gray-400" />
+                )}
               </div>
+            
+            {/* Tooltip for Note */}
+            {record.note && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                <span className="font-semibold text-gray-300">Note:</span> {record.note}
+                {/* Tooltip downward arrow */}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+              </div>
+            )}
             </div>
           ))
         )}

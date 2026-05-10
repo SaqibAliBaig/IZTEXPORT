@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Factory, Package, Calendar, Search } from 'lucide-react'
+import { ArrowLeft, Factory, Package, Calendar, Search, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Factory {
@@ -25,6 +25,16 @@ interface ClothIssue {
     color_image_url: string
   }
   production_records?: { id: string }[]
+  is_active?: boolean
+}
+interface ClothStock {
+  id: string
+  purchase_id: string
+  cloth_name: string
+  cloth_color: string
+  meters_remaining: number
+  meters_issued: number
+  purchase: { color_image_url: string }
 }
 
 export default function AddProductionPage() {
@@ -36,8 +46,11 @@ export default function AddProductionPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [clothStocks, setClothStocks] = useState<ClothStock[]>([])
+  const [selectedStock, setSelectedStock] = useState<ClothStock | null>(null)
+  const [metersToIssue, setMetersToIssue] = useState('')
   const [formData, setFormData] = useState({
-    factory_id: '',
+    factory_name: '',
     cloth_issue_id: '',
     product_type: '',
     output_quantity: '',
@@ -50,6 +63,7 @@ export default function AddProductionPage() {
 
   useEffect(() => {
     fetchFactories()
+    fetchAvailableStock()
   }, [])
 
   const fetchFactories = async () => {
@@ -60,7 +74,14 @@ export default function AddProductionPage() {
       .order('name')
     
     if (data) {
-      setFactories(data)
+      const grouped = data.reduce((acc, curr) => {
+        const name = curr.name.toLowerCase().trim()
+        if (!acc[name]) acc[name] = { ...curr }
+        else acc[name].current_balance += Number(curr.current_balance)
+        return acc
+      }, {} as Record<string, Factory>)
+      
+      setFactories(Object.values(grouped))
       
       // Auto-select if URL params exist (e.g. coming from Factory Records page)
       if (typeof window !== 'undefined') {
@@ -72,18 +93,43 @@ export default function AddProductionPage() {
           const factory = data.find(f => f.id === fId)
           if (factory) {
             setSearchQuery(factory.name)
-            fetchFactoryIssues(fId, iId)
+            fetchFactoryIssues(factory.name, iId)
           }
         }
       }
     }
   }
 
-  const fetchFactoryIssues = async (factoryId: string, preselectIssueId?: string | null) => {
-    setSelectedFactory(factoryId)
-    setFormData(prev => ({ ...prev, factory_id: factoryId, cloth_issue_id: '' }))
-    setSelectedIssue(null)
+  const fetchAvailableStock = async () => {
+    const { data: stockData } = await supabase
+      .from('cloth_stock')
+      .select(`
+        *,
+        purchase:cloth_purchases!cloth_stock_purchase_id_fkey(color_image_url)
+      `)
+      .gt('meters_remaining', 0)
+      .order('cloth_name')
+      
+    if (stockData) setClothStocks(stockData)
+  }
 
+  const fetchFactoryIssues = async (factoryName: string, preselectIssueId?: string | null) => {
+    setSelectedFactory(factoryName)
+    setFormData(prev => ({ ...prev, factory_name: factoryName, cloth_issue_id: '' }))
+    setSelectedIssue(null)
+    setSelectedStock(null)
+    setMetersToIssue('')
+
+    const { data: matchingParties } = await supabase
+      .from('parties')
+      .select('id')
+      .eq('name', factoryName)
+      .eq('party_type', 'factory')
+
+    const partyIds = matchingParties?.map(p => p.id) || []
+    let availableIssues: ClothIssue[] = []
+
+    if (partyIds.length > 0) {
     const { data } = await supabase
       .from('cloth_issues')
       .select(`
@@ -96,37 +142,91 @@ export default function AddProductionPage() {
         ),
         production_records(id)
       `)
-      .eq('factory_id', factoryId)
+      .in('factory_id', partyIds)
       .gt('meters_given', 0)
       .order('issue_date', { ascending: false })
       .order('created_at', { ascending: false })
 
     if (data) {
-      // Filter out issues that already have production records (fully utilized)
-      const availableIssues = (data as ClothIssue[]).filter(i => !i.production_records || i.production_records.length === 0)
+      // Filter out soft-deleted issues
+      availableIssues = (data as ClothIssue[]).filter(i => i.is_active !== false)
       setIssues(availableIssues)
-      if (preselectIssueId) {
-        const issue = availableIssues.find(i => i.id === preselectIssueId)
-        if (issue) {
-          setSelectedIssue(issue)
-          setFormData(prev => ({
-            ...prev,
-            cloth_issue_id: preselectIssueId,
-            product_type: issue.product_type || ''
-          }))
-        }
+    } else {
+      setIssues([])
+    }
+    } else {
+      setIssues([])
+    }
+
+    if (preselectIssueId) {
+      const issue = availableIssues.find(i => i.id === preselectIssueId)
+      if (issue) {
+        handleIssueSelect(issue.id, null)
       }
+    } else if (availableIssues.length > 0) {
+      handleIssueSelect(availableIssues[0].id, null)
+    } else if (clothStocks.length > 0) {
+      handleIssueSelect(null, clothStocks[0].id)
     }
   }
 
-  const handleIssueSelect = (issueId: string) => {
+  const handleIssueSelect = (issueId: string | null, stockId: string | null = null) => {
     const issue = issues.find(i => i.id === issueId)
+    const stock = clothStocks.find(s => s.id === stockId)
     setSelectedIssue(issue || null)
+    setSelectedStock(stock || null)
+    setMetersToIssue('')
     setFormData(prev => ({
       ...prev,
-      cloth_issue_id: issueId,
+      cloth_issue_id: issue ? issue.id : '',
       product_type: issue?.product_type || ''
     }))
+  }
+
+  const handleRemoveIssue = async (issueId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    toast((t) => (
+      <div>
+        <p className="mb-4 text-sm font-medium text-gray-800">Are you sure you want to remove this issued cloth from the active list? (It will remain in the database)</p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id)
+              setIsSubmitting(true)
+              try {
+                const { error } = await supabase
+                  .from('cloth_issues')
+                  .update({ is_active: false })
+                  .eq('id', issueId)
+
+                if (error) {
+                  if (error.message.includes('is_active')) {
+                    toast.error('Please run the SQL command to add is_active column first.')
+                  } else throw error
+                  return
+                }
+                toast.success('Removed successfully')
+                fetchFactoryIssues(selectedFactory)
+              } catch (error: any) {
+                toast.error('Failed to remove: ' + error.message)
+              } finally {
+                setIsSubmitting(false)
+              }
+            }}
+            className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity })
   }
 
   const quantity = parseInt(formData.output_quantity) || 0
@@ -137,8 +237,8 @@ export default function AddProductionPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.cloth_issue_id) {
-      toast.error('Please select a cloth issue')
+    if (!selectedIssue && !selectedStock) {
+      toast.error('Please select an issued cloth or available stock')
       return
     }
 
@@ -149,9 +249,98 @@ export default function AddProductionPage() {
 
     setIsSubmitting(true)
 
+    const factoryName = selectedFactory
+    const factorySummary = factories.find(f => f.name.toLowerCase() === factoryName.toLowerCase())
+    const oldBalance = factorySummary?.current_balance || 0
+    const newBalance = oldBalance + dueAmount
+
+    // 1. Create a NEW statement (party record) for this Factory
+    const { data: newParty, error: partyError } = await supabase
+      .from('parties')
+      .insert({
+        name: factoryName.trim(),
+        party_type: 'factory',
+        current_balance: newBalance,
+        opening_balance: oldBalance
+      })
+      .select()
+      .single()
+
+    if (partyError) {
+      toast.error('Failed to create new factory statement')
+      setIsSubmitting(false)
+      return
+    }
+
+    const finalFactoryId = newParty.id
+
+    // 2. Zero out balances from older statements to prevent duplicate balances
+    if (factoryName && oldBalance !== 0) {
+      const { data: activeStatements } = await supabase
+        .from('parties')
+        .select('id, current_balance')
+        .eq('name', factoryName.trim())
+        .eq('party_type', 'factory')
+        .neq('current_balance', 0)
+        .neq('id', finalFactoryId)
+
+      if (activeStatements) {
+        for (const stmt of activeStatements) {
+          await supabase.from('parties').update({ current_balance: 0 }).eq('id', stmt.id)
+          await supabase.from('ledger_entries').insert({
+            party_id: stmt.id,
+            entry_type: stmt.current_balance > 0 ? 'debit' : 'credit',
+            amount: Math.abs(stmt.current_balance),
+            related_type: 'adjustment',
+            entry_date: formData.production_date,
+            note: 'Balance carried forward to new statement'
+          })
+        }
+      }
+    }
+
+    let currentIssueId = selectedIssue?.id
+
+    if (selectedStock) {
+      const issueMeters = parseFloat(metersToIssue)
+      if (isNaN(issueMeters) || issueMeters <= 0 || issueMeters > selectedStock.meters_remaining) {
+         toast.error('Please enter a valid number of meters to issue.')
+         setIsSubmitting(false)
+         return
+      }
+
+      const { data: newIssue, error: issueError } = await supabase
+        .from('cloth_issues')
+        .insert({
+          factory_id: finalFactoryId,
+          cloth_purchase_id: selectedStock.purchase_id,
+          meters_given: issueMeters,
+          product_type: formData.product_type,
+          issue_date: formData.production_date,
+          note: 'Issued directly from production form'
+        })
+        .select()
+        .single()
+
+      if (issueError) {
+        toast.error('Failed to issue cloth')
+        setIsSubmitting(false)
+        return
+      }
+
+      currentIssueId = newIssue.id
+
+      await supabase
+        .from('cloth_stock')
+        .update({ 
+          meters_issued: selectedStock.meters_issued + issueMeters
+        })
+        .eq('id', selectedStock.id)
+    }
+
     const productionData = {
-      factory_id: formData.factory_id,
-      cloth_issue_id: formData.cloth_issue_id,
+      factory_id: finalFactoryId,
+      cloth_issue_id: currentIssueId,
       product_type: formData.product_type,
       output_quantity: quantity,
       output_unit: formData.output_unit,
@@ -175,11 +364,11 @@ export default function AddProductionPage() {
       return
     }
 
-    // Add ledger entry for factory (credit = they produced goods, debit = we owe them)
+    // Add ledger entry for factory
     await supabase
       .from('ledger_entries')
       .insert({
-        party_id: formData.factory_id,
+        party_id: finalFactoryId,
         entry_type: 'credit',
         amount: totalValue,
         related_type: 'production',
@@ -188,25 +377,12 @@ export default function AddProductionPage() {
         note: `Production: ${quantity} ${formData.product_type}`
       })
 
-    // Update factory balance
-    const factory = factories.find(f => f.id === formData.factory_id)
-    const newBalance = (factory?.current_balance || 0) + dueAmount
-
-    const { error: updateError } = await supabase
-      .from('parties')
-      .update({ current_balance: newBalance })
-      .eq('id', formData.factory_id)
-
-    if (updateError) {
-      console.error('Failed to update factory balance:', updateError)
-    }
-
     // If payment made, record it
     if (parseFloat(formData.paid_amount) > 0) {
       const { data: payment, error: payError } = await supabase
         .from('payments')
         .insert({
-          party_id: formData.factory_id,
+            party_id: finalFactoryId,
           related_type: 'production',
           related_id: production.id,
           amount: parseFloat(formData.paid_amount),
@@ -222,7 +398,7 @@ export default function AddProductionPage() {
         await supabase
           .from('ledger_entries')
           .insert({
-            party_id: formData.factory_id,
+                party_id: finalFactoryId,
             entry_type: 'debit',
             amount: parseFloat(formData.paid_amount),
             related_type: 'payment',
@@ -233,7 +409,7 @@ export default function AddProductionPage() {
       }
     }
 
-    toast.success('Production recorded successfully')
+    toast.success('Production recorded & new statement created successfully')
     router.push('/production')
   }
 
@@ -264,14 +440,14 @@ export default function AddProductionPage() {
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
                     setShowDropdown(true)
-                    if (formData.factory_id) setFormData({ ...formData, factory_id: '' })
+                    if (formData.factory_name) setFormData({ ...formData, factory_name: '' })
                   }}
                   onFocus={() => setShowDropdown(true)}
                   onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                   className="w-full pl-10 pr-3 py-3 border rounded-lg bg-white focus:ring-2 focus:ring-black outline-none"
                 />
               </div>
-              {formData.factory_id && (
+              {formData.factory_name && (
                 <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium whitespace-nowrap">
                   ✓ Selected
                 </span>
@@ -285,9 +461,9 @@ export default function AddProductionPage() {
                   .map(factory => (
                     <button
                       type="button"
-                      key={factory.id}
+                      key={factory.name}
                       onClick={() => {
-                        fetchFactoryIssues(factory.id)
+                        fetchFactoryIssues(factory.name)
                         setSearchQuery(factory.name)
                         setShowDropdown(false)
                       }}
@@ -306,19 +482,22 @@ export default function AddProductionPage() {
           <div className="bg-white rounded-xl p-4 border">
             <label className="block text-sm font-medium mb-3 flex items-center gap-2">
               <Package className="w-4 h-4" />
-              Cloth Issued to Factory *
+              Select Issued Cloth or Available Stock *
             </label>
             
-            {issues.length === 0 ? (
+            {(issues.length === 0 && clothStocks.length === 0) ? (
               <p className="text-center py-4 text-gray-500">
-                No cloth issues found for this factory
+                No cloth available
               </p>
             ) : (
-              <div className="space-y-3 max-h-64 overflow-y-auto">
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                {issues.length > 0 && (
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-2">Currently Issued to Factory</div>
+                )}
                 {issues.map(issue => (
                   <div
                     key={issue.id}
-                    onClick={() => handleIssueSelect(issue.id)}
+                    onClick={() => handleIssueSelect(issue.id, null)}
                     className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
                       selectedIssue?.id === issue.id
                         ? 'border-black bg-gray-50'
@@ -344,6 +523,49 @@ export default function AddProductionPage() {
                         {new Date(issue.issue_date).toLocaleDateString()}
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => handleRemoveIssue(issue.id, e)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Remove from active list"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))}
+
+                {clothStocks.length > 0 && (
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4 pt-4 border-t">Available Raw Stock</div>
+                )}
+                {clothStocks.map(stock => (
+                  <div
+                    key={stock.id}
+                    onClick={() => handleIssueSelect(null, stock.id)}
+                    className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                      selectedStock?.id === stock.id
+                        ? 'border-black bg-gray-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {stock.purchase?.color_image_url ? (
+                      <img src={stock.purchase.color_image_url} alt={stock.cloth_color} className="w-12 h-12 object-cover rounded-lg" />
+                    ) : (
+                       <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <Package className="w-6 h-6 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {stock.cloth_name}
+                        {stock.cloth_color && ` - ${stock.cloth_color}`}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Available: {stock.meters_remaining}m
+                      </p>
+                    </div>
+                    <div className="text-right">
+                       <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Raw Stock</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -351,8 +573,20 @@ export default function AddProductionPage() {
           </div>
         )}
 
+        {selectedStock && (
+          <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2 text-blue-900">Meters to Issue for this Production *</label>
+              <input type="number" required min="0.01" max={selectedStock.meters_remaining} step="0.01" placeholder="Enter meters used" value={metersToIssue} onChange={(e) => setMetersToIssue(e.target.value)} className="w-full px-3 py-3 border rounded-lg border-blue-200 focus:ring-blue-500" />
+              <p className="text-xs text-blue-600 mt-1">
+                This will automatically issue the cloth from raw stock to {formData.factory_name} and record the production.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Production Details */}
-        {selectedIssue && (
+        {(selectedIssue || selectedStock) && (
           <div className="bg-white rounded-xl p-4 border space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">Product Type</label>

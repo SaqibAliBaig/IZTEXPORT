@@ -10,6 +10,7 @@ interface Party {
   id: string
   name: string
   current_balance: number
+  created_at?: string
 }
 
 export default function AddPurchasePage() {
@@ -40,11 +41,23 @@ export default function AddPurchasePage() {
   const fetchSuppliers = async () => {
     const { data } = await supabase
       .from('parties')
-      .select('id, name, current_balance')
+      .select('id, name, current_balance, created_at')
       .eq('party_type', 'supplier')
-      .order('name')
+      .order('created_at', { ascending: false })
 
-    if (data) setSuppliers(data)
+    if (data) {
+      const uniqueSuppliers = data.reduce((acc, curr) => {
+        const name = curr.name.toLowerCase().trim()
+        if (!acc[name]) {
+          acc[name] = { ...curr }
+        } else {
+          acc[name].current_balance = Number(acc[name].current_balance) + Number(curr.current_balance)
+        }
+        return acc
+      }, {} as Record<string, Party>)
+      
+      setSuppliers(Object.values(uniqueSuppliers).sort((a, b) => a.name.localeCompare(b.name)))
+    }
   }
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,37 +111,66 @@ export default function AddPurchasePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    let finalSupplierId = formData.supplier_id
-    let currentSupplierBalance = 0
+    let supplierName = ''
+    let openingBalance = 0
 
     if (isNewSupplier) {
       if (!newSupplierName.trim()) {
         toast.error('Please enter a supplier name')
         return
       }
-      const { data: newParty, error: partyError } = await supabase
-        .from('parties')
-        .insert({
-          name: newSupplierName.trim(),
-          party_type: 'supplier',
-          current_balance: 0,
-          opening_balance: 0
-        })
-        .select()
-        .single()
-
-      if (partyError) {
-        toast.error('Failed to create new supplier')
-        return
-      }
-      finalSupplierId = newParty.id
+      supplierName = newSupplierName.trim()
     } else {
-      if (!finalSupplierId) {
+      if (!formData.supplier_id) {
         toast.error('Please select a supplier')
         return
       }
-      const supplier = suppliers.find(s => s.id === finalSupplierId)
-      currentSupplierBalance = supplier?.current_balance || 0
+      const supplier = suppliers.find(s => s.id === formData.supplier_id)
+      supplierName = supplier?.name || ''
+      openingBalance = supplier?.current_balance || 0
+    }
+
+    const finalCurrentBalance = openingBalance + dueAmount
+
+    // Always create a new statement row for the transaction
+    const { data: newParty, error: partyError } = await supabase
+      .from('parties')
+      .insert({
+        name: supplierName,
+        party_type: 'supplier',
+        current_balance: finalCurrentBalance,
+        opening_balance: openingBalance
+      })
+      .select()
+      .single()
+
+    if (partyError) {
+      toast.error('Failed to create supplier statement')
+      return
+    }
+
+    const finalSupplierId = newParty.id
+
+    // Zero out older statements for this supplier so the sum remains correct
+    // This ensures only the newest statement holds the grand total
+    if (!isNewSupplier) {
+      const { data: existing } = await supabase
+        .from('parties')
+        .select('id, name')
+        .eq('party_type', 'supplier')
+
+      if (existing) {
+        const idsToZero = existing
+          .filter(p => p.name.toLowerCase().trim() === supplierName.toLowerCase().trim() && p.id !== finalSupplierId)
+          .map(p => p.id)
+
+        if (idsToZero.length > 0) {
+          await supabase
+            .from('parties')
+            .update({ current_balance: 0 })
+            .in('id', idsToZero)
+        }
+      }
     }
 
     const purchaseData = {
@@ -215,14 +257,6 @@ export default function AddPurchasePage() {
       }
     }
 
-    // Update supplier balance
-    const newBalance = currentSupplierBalance + dueAmount
-
-    await supabase
-      .from('parties')
-      .update({ current_balance: newBalance })
-      .eq('id', finalSupplierId)
-
     toast.success('Purchase added successfully')
     router.push('/purchases')
   }
@@ -294,7 +328,7 @@ export default function AddPurchasePage() {
                       {supplier.name}
                     </button>
                   ))}
-                {searchQuery.trim() && !suppliers.some(s => s.name.toLowerCase() === searchQuery.toLowerCase()) && (
+                {searchQuery.trim() && !suppliers.some(s => s.name.toLowerCase().trim() === searchQuery.trim().toLowerCase()) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -429,12 +463,29 @@ export default function AddPurchasePage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Due Amount</label>
+              <label className="block text-sm font-medium mb-2">Current Bill Due</label>
               <div className="w-full px-3 py-3 bg-gray-50 border rounded-lg">
                 <span className="text-orange-600 font-medium">₹{dueAmount.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>
+
+          {formData.supplier_id && formData.supplier_id !== 'new' && (
+            <div className="bg-orange-50 rounded-lg p-4 mt-2 border border-orange-100">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-orange-800">Previous Owed Balance</span>
+                <span className="font-medium text-orange-800">
+                  ₹{(suppliers.find(s => s.id === formData.supplier_id)?.current_balance || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="flex justify-between items-center border-t border-orange-200 pt-2">
+                <span className="font-bold text-orange-900">Total Supplier Due</span>
+                <span className="text-lg font-bold text-red-600">
+                  ₹{((suppliers.find(s => s.id === formData.supplier_id)?.current_balance || 0) + dueAmount).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Date & Notes */}

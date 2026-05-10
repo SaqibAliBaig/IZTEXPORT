@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Package, Factory, Users, DollarSign, TrendingUp, Warehouse, FileText, Shirt, Edit2, X, Truck, Search, RotateCcw, Wallet } from 'lucide-react'
+import { Package, Factory, Users, DollarSign, TrendingUp, Warehouse, FileText, Shirt, Edit2, X, Truck, Search, RotateCcw, Wallet, Store } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
@@ -100,8 +100,8 @@ export default function Dashboard() {
     
     const { data: duesData } = await supabase
       .from('parties')
-      .select('id, name, party_type, current_balance')
-      .order('name')
+      .select('id, name, party_type, current_balance, created_at')
+      .order('created_at', { ascending: true })
 
     const { data: prodData } = await supabase
       .from('production_records')
@@ -115,8 +115,6 @@ export default function Dashboard() {
       .select('product_type, quantity')
       .gt('quantity', 0)
 
-    const totalProduced = prodData?.reduce((sum, p) => sum + Number(p.output_quantity), 0) || 0
-
     const { data: issuesData } = await supabase
       .from('cloth_issues')
       .select(`
@@ -129,8 +127,6 @@ export default function Dashboard() {
       .order('created_at', { ascending: false })
       .limit(5)
       
-    const totalSold = salesData?.reduce((sum, s) => sum + Number(s.quantity), 0) || 0
-    const availableProducts = totalProduced - totalSold
 
     const productMap = new Map<string, { produced: number, sold: number }>()
 
@@ -154,6 +150,8 @@ export default function Dashboard() {
       product_type,
       quantity: produced - sold
     })).filter(p => p.quantity > 0).sort((a, b) => b.quantity - a.quantity)
+
+    const availableProducts = pDetails.reduce((sum, p) => sum + p.quantity, 0)
 
     setProductDetails(pDetails)
 
@@ -200,16 +198,29 @@ export default function Dashboard() {
     }
 
     if (duesData) {
-      setPartyDetails(duesData as PartyDetail[])
+      const groupedDues = Object.values(duesData.reduce((acc: any, curr: any) => {
+        const key = `${curr.name.toLowerCase().trim()}-${curr.party_type}`
+        if (!acc[key]) {
+          acc[key] = curr
+        } else {
+          acc[key] = {
+            ...curr,
+            current_balance: Number(acc[key].current_balance) + Number(curr.current_balance)
+          }
+        }
+        return acc
+      }, {})).sort((a: any, b: any) => a.name.localeCompare(b.name)) as PartyDetail[]
+
+      setPartyDetails(groupedDues)
       setStats(prev => ({
         ...prev,
-        customerDues: duesData
+        customerDues: groupedDues
           .filter(d => d.party_type === 'customer')
           .reduce((sum, d) => sum + Number(d.current_balance), 0),
-        factoryDues: duesData
+        factoryDues: groupedDues
           .filter(d => d.party_type === 'factory')
           .reduce((sum, d) => sum + Number(d.current_balance), 0),
-        supplierDues: duesData
+        supplierDues: groupedDues
           .filter(d => d.party_type === 'supplier')
           .reduce((sum, d) => sum + Number(d.current_balance), 0)
       }))
@@ -222,11 +233,24 @@ export default function Dashboard() {
     setIsLoadingEdit(true)
     const { data, error } = await supabase
       .from('parties')
-      .select('id, name, current_balance')
+      .select('id, name, current_balance, created_at')
       .eq('party_type', type)
-      .order('name')
+      .order('created_at', { ascending: true })
     
-    if (data) setEditingList(data)
+    if (data) {
+      const grouped = Object.values(data.reduce((acc: any, curr: any) => {
+        const key = curr.name.toLowerCase().trim()
+        if (!acc[key]) acc[key] = curr
+        else {
+          acc[key] = {
+            ...curr,
+            current_balance: Number(acc[key].current_balance) + Number(curr.current_balance)
+          }
+        }
+        return acc
+      }, {})).sort((a: any, b: any) => a.name.localeCompare(b.name)) as PartyDue[]
+      setEditingList(grouped)
+    }
     if (error) toast.error(`Failed to load ${type}s`)
     setIsLoadingEdit(false)
   }
@@ -280,12 +304,6 @@ export default function Dashboard() {
         setIsResetting(false)
         return
       }
-      
-      // Clear recent issues visually by setting meters given to 0 (avoids FK constraint errors)
-      await supabase
-        .from('cloth_issues')
-        .update({ meters_given: 0 })
-        .gt('meters_given', 0)
 
       toast.success('Cloth stock reset successfully')
       setIsResetModalOpen(false)
@@ -300,11 +318,6 @@ export default function Dashboard() {
   const resetIssuedCloth = async () => {
     setIsResettingIssues(true)
     try {
-      // Clear recent issues visually by setting meters given to 0 (avoids FK constraint errors)
-      await supabase
-        .from('cloth_issues')
-        .update({ meters_given: 0 })
-        .gt('meters_given', 0)
 
       // Reset the counters in cloth_stock and restore remaining inventory
       const { data: activeStock } = await supabase
@@ -378,12 +391,27 @@ export default function Dashboard() {
     }
   }
 
-  const saveDues = async () => {
+   const saveDues = async () => {
     setIsSaving(true)
     try {
-      const updates = editingList.map(c => 
-        supabase.from('parties').update({ current_balance: Number(c.current_balance) || 0 }).eq('id', c.id)
-      )
+      // Remove the accidentally pasted text right here
+      const updates = editingList.map(async c => {
+        const { data: stmts } = await supabase
+          .from('parties')
+          .select('id')
+          .eq('name', c.name)
+          .eq('party_type', editingPartyType)
+          .order('created_at', { ascending: false })
+          
+        if (stmts && stmts.length > 0) {
+          const newestId = stmts[0].id
+          await supabase.from('parties').update({ current_balance: Number(c.current_balance) || 0 }).eq('id', newestId)
+          if (stmts.length > 1) {
+            const olderIds = stmts.slice(1).map(s => s.id)
+            await supabase.from('parties').update({ current_balance: 0 }).in('id', olderIds)
+          }
+        }
+      })
       await Promise.all(updates)
       toast.success(`${editingPartyType} dues updated successfully`)
       setEditingPartyType(null)
@@ -552,7 +580,7 @@ export default function Dashboard() {
                 productDetails.map(p => (
                   <div key={p.product_type} className="flex justify-between items-center py-1 border-b last:border-0">
                     <span className="text-sm text-gray-700 truncate pr-2">{p.product_type}</span>
-                    <span className="text-sm font-medium whitespace-nowrap text-gray-900">{p.quantity.toLocaleString('en-IN')}</span>
+                    <span className={`text-sm font-medium whitespace-nowrap ${p.quantity < 0 ? 'text-red-600' : 'text-gray-900'}`}>{p.quantity.toLocaleString('en-IN')}</span>
                   </div>
                 ))
               ) : (
@@ -607,9 +635,9 @@ export default function Dashboard() {
                 <>
                 {partyDetails.filter(p => p.party_type === 'customer' && Number(p.current_balance) !== 0).slice(0, 5).map(p => (
                   <div key={p.id} className="flex justify-between items-center py-1 border-b last:border-0">
-                    <Link href={`/statements/${p.id}`} className="text-sm text-gray-700 truncate pr-2 hover:text-blue-600 hover:underline cursor-pointer" title="View Full Statement">{p.name}</Link>
+                    <Link href={`/all-customers/${encodeURIComponent(p.name)}`} className="text-sm text-gray-700 truncate pr-2 hover:text-blue-600 hover:underline cursor-pointer" title="View Statements">{p.name}</Link>
                     <Link 
-                      href={`/statements/${p.id}`}
+                      href={`/all-customers/${encodeURIComponent(p.name)}`}
                       className={`text-sm font-medium whitespace-nowrap hover:underline ${Number(p.current_balance) > 0 ? 'text-green-500' : 'text-red-500'}`}
                       title="View statement to update balance"
                     >
@@ -652,9 +680,9 @@ export default function Dashboard() {
                 <>
                 {partyDetails.filter(p => p.party_type === 'factory' && Number(p.current_balance) !== 0).slice(0, 5).map(p => (
                   <div key={p.id} className="flex justify-between items-center py-1 border-b last:border-0">
-                    <Link href={`/statements/${p.id}`} className="text-sm text-gray-700 truncate pr-2 hover:text-blue-600 hover:underline cursor-pointer" title="View Full Statement">{p.name}</Link>
+                    <Link href={`/all-factories/${encodeURIComponent(p.name)}`} className="text-sm text-gray-700 truncate pr-2 hover:text-blue-600 hover:underline cursor-pointer" title="View Statements">{p.name}</Link>
                     <Link 
-                      href={`/statements/${p.id}`}
+                      href={`/all-factories/${encodeURIComponent(p.name)}`}
                       className={`text-sm font-medium whitespace-nowrap hover:underline ${Number(p.current_balance) > 0 ? 'text-red-500' : 'text-green-500'}`}
                       title="View statement to update balance"
                     >
@@ -663,7 +691,7 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {partyDetails.filter(p => p.party_type === 'factory' && Number(p.current_balance) !== 0).length > 5 && (
-                  <Link href="/statements" className="block text-center text-xs text-blue-600 hover:underline mt-2 pt-2 border-t">
+                  <Link href="/all-factories" className="block text-center text-xs text-blue-600 hover:underline mt-2 pt-2 border-t">
                     View all {partyDetails.filter(p => p.party_type === 'factory' && Number(p.current_balance) !== 0).length} factories
                   </Link>
                 )}
@@ -697,9 +725,9 @@ export default function Dashboard() {
                 <>
                 {partyDetails.filter(p => p.party_type === 'supplier' && Number(p.current_balance) !== 0).slice(0, 5).map(p => (
                   <div key={p.id} className="flex justify-between items-center py-1 border-b last:border-0">
-                    <Link href={`/statements/${p.id}`} className="text-sm text-gray-700 truncate pr-2 hover:text-blue-600 hover:underline cursor-pointer" title="View Full Statement">{p.name}</Link>
+                    <Link href={`/all-suppliers/${encodeURIComponent(p.name)}`} className="text-sm text-gray-700 truncate pr-2 hover:text-blue-600 hover:underline cursor-pointer" title="View Statements">{p.name}</Link>
                     <Link 
-                      href={`/statements/${p.id}`}
+                      href={`/all-suppliers/${encodeURIComponent(p.name)}`}
                       className={`text-sm font-medium whitespace-nowrap hover:underline ${Number(p.current_balance) > 0 ? 'text-red-500' : 'text-green-500'}`}
                       title="View statement to update balance"
                     >
@@ -708,7 +736,7 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {partyDetails.filter(p => p.party_type === 'supplier' && Number(p.current_balance) !== 0).length > 5 && (
-                  <Link href="/statements" className="block text-center text-xs text-blue-600 hover:underline mt-2 pt-2 border-t">
+                  <Link href="/all-suppliers" className="block text-center text-xs text-blue-600 hover:underline mt-2 pt-2 border-t">
                     View all {partyDetails.filter(p => p.party_type === 'supplier' && Number(p.current_balance) !== 0).length} suppliers
                   </Link>
                 )}
@@ -724,7 +752,7 @@ export default function Dashboard() {
       {/* Quick Actions */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           <Link 
             href="/purchases/add"
             className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
@@ -750,6 +778,14 @@ export default function Dashboard() {
           </Link>
 
           <Link 
+            href="/direct-garments/add"
+            className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
+          >
+            <Store className="w-6 h-6 mx-auto mb-2 text-rose-500" />
+            <span className="text-sm">Direct Garment</span>
+          </Link>
+
+          <Link 
             href="/sales/add"
             className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
           >
@@ -758,19 +794,35 @@ export default function Dashboard() {
           </Link>
 
           <Link 
-            href="/payments/add"
-            className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
-          >
-            <DollarSign className="w-6 h-6 mx-auto mb-2 text-purple-500" />
-            <span className="text-sm">Record Payment</span>
-          </Link>
-
-          <Link 
             href="/payments"
             className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
           >
             <Wallet className="w-6 h-6 mx-auto mb-2 text-emerald-500" />
             <span className="text-sm">View Payments</span>
+          </Link>
+
+          <Link 
+            href="/all-customers"
+            className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
+          >
+            <Users className="w-6 h-6 mx-auto mb-2 text-sky-500" />
+            <span className="text-sm">All Customers</span>
+          </Link>
+
+          <Link 
+            href="/all-factories"
+            className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
+          >
+            <Factory className="w-6 h-6 mx-auto mb-2 text-purple-500" />
+            <span className="text-sm">All Factories</span>
+          </Link>
+
+          <Link 
+            href="/all-suppliers"
+            className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
+          >
+            <Truck className="w-6 h-6 mx-auto mb-2 text-pink-500" />
+            <span className="text-sm">All Suppliers</span>
           </Link>
         </div>
       </div>

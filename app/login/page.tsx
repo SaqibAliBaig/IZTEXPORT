@@ -1,36 +1,34 @@
 'use client'
 
-import { useEffect, useActionState } from 'react'
-import { useFormStatus } from 'react-dom'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import toast from 'react-hot-toast'
 import { Lock, Mail, ArrowRight } from 'lucide-react'
-import { login } from './actions'
-
-function LoginButton() {
-  const { pending } = useFormStatus()
-
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full bg-black text-white py-3 rounded-xl text-lg font-medium flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors disabled:opacity-70 mt-2"
-    >
-      {pending ? 'Signing in...' : 'Sign In'}
-      {!pending && <ArrowRight className="w-5 h-5" />}
-    </button>
-  )
-}
 
 export default function LoginPage() {
-  const initialState: { error: string | undefined } = { error: undefined }
-  const [state, formAction] = useActionState(login, initialState)
+  const router = useRouter()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
 
-  useEffect(() => {
-    if (state?.error) {
-      toast.error(state.error)
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+
+    // Simulate a slight delay for better UX
+    await new Promise(resolve => setTimeout(resolve, 600))
+
+    if (email === 'saqibbaig110@gmail.com' && password === 'saqibbaig@1100') {
+      document.cookie = "stitchbook_auth=authenticated; path=/; max-age=31536000"
+      toast.success('Login successful')
+      router.push('/')
+      router.refresh()
+    } else {
+      toast.error('Invalid email or password')
+      setIsLoading(false)
     }
-  }, [state])
+  }
 
   return (
     <div className="min-h-[80vh] bg-gray-50 flex flex-col justify-center items-center p-4">
@@ -47,15 +45,16 @@ export default function LoginPage() {
           <p className="text-gray-500 text-sm mt-1">Please sign in to continue</p>
         </div>
 
-        <form action={formAction} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
             <div className="relative">
               <Mail className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
               <input
                 type="email"
-                name="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none transition-all"
                 placeholder="Enter your email"
               />
@@ -68,16 +67,23 @@ export default function LoginPage() {
               <Lock className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
               <input
                 type="password"
-                name="password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none transition-all"
                 placeholder="Enter your password"
               />
             </div>
           </div>
 
-          <LoginButton />
-
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-black text-white py-3 rounded-xl text-lg font-medium flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors disabled:opacity-70 mt-2"
+          >
+            {isLoading ? 'Signing in...' : 'Sign In'}
+            {!isLoading && <ArrowRight className="w-5 h-5" />}
+          </button>
         </form>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Search, TrendingUp, ArrowLeft } from 'lucide-react'
+import { Plus, Search, TrendingUp, ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -13,6 +13,7 @@ interface Sale {
   rate: number
   total_amount: number
   sale_date: string
+  note?: string
   created_at: string
   customer_name: string
 }
@@ -143,7 +144,7 @@ export default function SalesPage() {
       ) : (
         <div className="grid gap-4">
           {filteredSales.map(sale => (
-            <div key={sale.id} className="bg-white rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md">
+            <div key={sale.id} className="relative group bg-white rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
                   <TrendingUp className="w-6 h-6 text-orange-500" />
@@ -159,10 +160,22 @@ export default function SalesPage() {
                 <p className="text-xl font-bold text-green-600">
                   ₹{sale.total_amount.toLocaleString('en-IN')}
                 </p>
-                <p className="text-xs text-gray-500">
-                  {new Date(sale.sale_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}
-                </p>
+                <div className="flex items-center justify-end gap-1 mt-1 text-xs text-gray-500">
+                  <span>{new Date(sale.sale_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  {sale.note && (
+                    <FileText className="w-3.5 h-3.5 text-gray-400" />
+                  )}
+                </div>
               </div>
+
+              {/* Tooltip for Note */}
+              {sale.note && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                  <span className="font-semibold text-gray-300">Note:</span> {sale.note}
+                  {/* Tooltip downward arrow */}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                </div>
+              )}
             </div>
           ))}
         </div>

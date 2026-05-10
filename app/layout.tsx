@@ -2,19 +2,17 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
-import Image from 'next/image'
-import Link from 'next/link'
-import TopNav from './TopNav'
 import BottomNav from './BottomNav'
+import TopNav from './TopNav'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'StitchBook',
+  title: 'IZTEXPORT',
   description: 'Complete cloth-to-factory-to-customer management',
   icons: {
-    icon: '/Gemini_Generated_Image_b4mwbsb4mwbsb4mw.png?v=2',
-    apple: '/Gemini_Generated_Image_b4mwbsb4mwbsb4mw.png?v=2',
+    icon: '/icon.png',
+    apple: '/icon.png',
   },
 }
 

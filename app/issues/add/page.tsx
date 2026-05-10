@@ -52,7 +52,15 @@ export default function IssueClothPage() {
       .select('id, name')
       .eq('party_type', 'factory')
       .order('name')
-    if (data) setFactories(data)
+    if (data) {
+      const unique = data.reduce((acc, curr) => {
+        if (!acc.find(f => f.name.toLowerCase().trim() === curr.name.toLowerCase().trim())) {
+          acc.push(curr)
+        }
+        return acc
+      }, [] as Factory[])
+      setFactories(unique)
+    }
   }
 
   const fetchAvailableStock = async () => {
