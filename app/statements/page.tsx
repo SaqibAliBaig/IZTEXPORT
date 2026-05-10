@@ -52,37 +52,42 @@ export default function StatementsPage() {
 
   const getIcon = (type: string) => {
     switch (type) {
-      case 'customer': return <Users className="w-5 h-5" />
-      case 'factory': return <Factory className="w-5 h-5" />
-      case 'supplier': return <Package className="w-5 h-5" />
-      default: return <FileText className="w-5 h-5" />
+      case 'customer': return <Users className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
+      case 'factory': return <Factory className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+      case 'supplier': return <Package className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
+      default: return <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500" />
     }
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+    <div className="max-w-7xl mx-auto px-4 py-6 pb-24">
+      <div className="flex items-center gap-2 sm:gap-4 mb-6 min-w-0">
+        <button onClick={() => router.back()} className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-2xl font-bold">Account Statements</h2>
+        <h2 className="text-lg sm:text-2xl font-bold flex items-center gap-2 truncate">
+          <FileText className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0 hidden sm:block" />
+          <span className="truncate">Account Statements</span>
+        </h2>
       </div>
 
       {/* Type Filter */}
-      <div className="flex gap-2 mb-4">
-        {['all', 'customer', 'factory', 'supplier'].map(type => (
-          <button
-            key={type}
-            onClick={() => setTypeFilter(type)}
-            className={`px-4 py-2 rounded-lg text-sm capitalize ${
-              typeFilter === type
-                ? 'bg-black text-white'
-                : 'bg-white border text-gray-600'
-            }`}
-          >
-            {type === 'all' ? 'All' : type + 's'}
-          </button>
-        ))}
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-4">
+        <div className="flex bg-white rounded-xl border p-1 overflow-x-auto w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {['all', 'customer', 'factory', 'supplier'].map(type => (
+            <button
+              key={type}
+              onClick={() => setTypeFilter(type)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex-1 text-center capitalize ${
+                typeFilter === type
+                  ? 'bg-black text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {type === 'all' ? 'All' : type + 's'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Search */}
@@ -93,50 +98,49 @@ export default function StatementsPage() {
           placeholder="Search party..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 border rounded-xl"
+          className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none text-sm sm:text-base"
         />
       </div>
 
       {/* Parties List */}
-      <div className="space-y-3">
+      <div className="grid gap-3 sm:gap-4">
         {filteredParties.map(party => (
           <Link
             key={party.id}
             href={`/statements/${party.id}`}
-            className="relative group bg-white rounded-xl border p-4 flex items-center justify-between transition-all hover:border-gray-400 hover:shadow-md"
+            className="relative group bg-white rounded-xl border p-3 sm:p-4 flex flex-row items-center justify-between gap-3 sm:gap-4 transition-all hover:border-gray-400 hover:shadow-md"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-50 rounded-xl flex items-center justify-center flex-shrink-0">
                 {getIcon(party.party_type)}
               </div>
-              <div>
-                <h3 className="font-semibold">{party.name}</h3>
-                <div className="flex items-center gap-1">
-                  <p className="text-sm text-gray-500 capitalize">
-                    {party.party_type} • {new Date(party.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </p>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-base sm:text-lg truncate">{party.name}</h3>
+                <div className="flex items-center gap-1 mt-0.5 text-xs sm:text-sm text-gray-500">
+                  <span className="capitalize">{party.party_type}</span>
+                  <span className="hidden sm:inline"> • {new Date(party.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   {party.note && (
-                    <FileText className="w-3.5 h-3.5 text-gray-400 ml-1" />
+                    <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400 ml-1 flex-shrink-0" />
                   )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0 ml-2">
               <div className="text-right">
-                <p className="text-sm text-gray-500">Balance</p>
-                <p className={`font-bold ${party.current_balance > 0 ? 'text-green-600' : party.current_balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                <p className="text-[10px] sm:text-sm text-gray-500">Balance</p>
+                <p className={`font-bold text-sm sm:text-base ${party.current_balance > 0 ? 'text-green-600' : party.current_balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
                   ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
                 </p>
               </div>
-              <FileText className="w-5 h-5 text-gray-400" />
+              <FileText className="hidden sm:block w-5 h-5 text-gray-400 flex-shrink-0" />
             </div>
 
             {/* Tooltip for Note */}
             {party.note && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+              <div className="absolute bottom-full right-0 md:left-1/2 md:right-auto md:-translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-[calc(100vw-2rem)] md:max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
                 <span className="font-semibold text-gray-300">Note:</span> {party.note}
                 {/* Tooltip downward arrow */}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                <div className="absolute top-full right-6 md:left-1/2 md:right-auto md:-translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
               </div>
             )}
           </Link>

@@ -481,7 +481,7 @@ export default function Dashboard() {
           </div>
 
           {/* Recent Issues Hover Details */}
-        <div className="absolute top-full left-0 mt-2 w-80 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block max-h-[28rem] overflow-y-auto p-3 cursor-default" onClick={(e) => e.stopPropagation()}>
+        <div className="absolute top-full right-0 md:left-0 md:right-auto mt-2 w-[calc(100vw-2rem)] sm:w-80 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block max-h-[28rem] overflow-y-auto p-3 cursor-default" onClick={(e) => e.stopPropagation()}>
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Recent 5 Issues</h4>
             <div className="space-y-2">
               {recentIssues.length > 0 ? (
@@ -517,7 +517,7 @@ export default function Dashboard() {
           </div>
 
           {/* Cloth Remaining Hover Details */}
-      <div className="absolute top-full left-0 mt-2 w-72 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3 cursor-default" onClick={(e) => e.stopPropagation()}>
+      <div className="absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] sm:w-72 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3 cursor-default" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-2 border-b pb-2">
               <h4 className="text-xs font-bold text-gray-400 uppercase">Cloth Stock Details</h4>
               <Link href="/snapshots" className="text-[10px] bg-teal-50 text-teal-600 px-2 py-1 rounded hover:bg-teal-100 font-medium">History</Link>
@@ -573,7 +573,7 @@ export default function Dashboard() {
           </div>
 
           {/* Ready Garments Hover Details */}
-      <div className="absolute top-full left-0 mt-2 w-80 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block max-h-[28rem] overflow-y-auto p-3 cursor-default" onClick={(e) => e.stopPropagation()}>
+      <div className="absolute top-full right-0 md:left-0 md:right-auto mt-2 w-[calc(100vw-2rem)] sm:w-80 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block max-h-[28rem] overflow-y-auto p-3 cursor-default" onClick={(e) => e.stopPropagation()}>
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Available Stock</h4>
             <div className="space-y-1 mb-4">
               {productDetails.length > 0 ? (
@@ -628,7 +628,7 @@ export default function Dashboard() {
           </div>
           
           {/* Customer Dues Hover Details */}
-          <div className="absolute top-full left-0 mt-2 w-64 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3">
+          <div className="absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] sm:w-64 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3">
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Customer Details</h4>
             <div className="space-y-1">
               {partyDetails.filter(p => p.party_type === 'customer' && Number(p.current_balance) !== 0).length > 0 ? (
@@ -673,7 +673,7 @@ export default function Dashboard() {
           </div>
 
           {/* Factory Dues Hover Details */}
-          <div className="absolute top-full right-0 mt-2 w-64 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3">
+          <div className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-64 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3">
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Factory Details</h4>
             <div className="space-y-1">
               {partyDetails.filter(p => p.party_type === 'factory' && Number(p.current_balance) !== 0).length > 0 ? (
@@ -718,7 +718,7 @@ export default function Dashboard() {
           </div>
 
           {/* Supplier Dues Hover Details */}
-          <div className="absolute top-full right-0 mt-2 w-64 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3">
+          <div className="absolute top-full left-0 md:right-0 md:left-auto mt-2 w-[calc(100vw-2rem)] sm:w-64 bg-white border rounded-xl shadow-xl z-50 hidden group-hover:block focus-within:block max-h-64 overflow-y-auto p-3">
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Supplier Details</h4>
             <div className="space-y-1">
               {partyDetails.filter(p => p.party_type === 'supplier' && Number(p.current_balance) !== 0).length > 0 ? (

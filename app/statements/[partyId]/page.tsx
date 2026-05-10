@@ -656,7 +656,24 @@ export default function PartyStatementPage() {
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        logging: false
+        logging: false,
+        windowWidth: 1024,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById('statement-content')
+          if (clonedElement) {
+            // Force desktop-like dimensions for the PDF regardless of current screen size
+            clonedElement.style.width = '900px'
+            clonedElement.style.padding = '40px'
+            
+            // Fix overflow on mobile so table doesn't get clipped
+            const tableWrappers = clonedElement.querySelectorAll('.overflow-x-auto')
+            tableWrappers.forEach(wrapper => {
+              (wrapper as HTMLElement).style.overflow = 'visible'
+              (wrapper as HTMLElement).style.overflowX = 'visible'
+              wrapper.classList.remove('-mx-4', 'px-4') // Remove mobile margin/padding tweaks
+            })
+          }
+        }
       })
 
       const imgWidth = 210 // A4 width in mm
@@ -775,75 +792,75 @@ export default function PartyStatementPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
-      <div className="flex justify-between items-start mb-6 print:hidden">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 print:hidden">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 w-full sm:w-auto">
+          <button onClick={() => router.back()} className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <FileText className="w-6 h-6" />
-            Account Statement
+          <h2 className="text-lg sm:text-2xl font-bold flex items-center gap-2 truncate">
+            <FileText className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
+            <span className="truncate">Account Statement</span>
           </h2>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
           <button 
             onClick={() => window.print()} 
-            className="bg-black text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition-colors"
+            className="flex-1 sm:flex-none bg-black text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors text-sm sm:text-base"
           >
-            <Printer className="w-4 h-4" />
-            Print
+            <Printer className="w-4 h-4 flex-shrink-0" />
+            <span>Print</span>
           </button>
           <button 
             onClick={handleDownloadPDF} 
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
+            className="flex-1 sm:flex-none bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors text-sm sm:text-base"
           >
-            <Download className="w-4 h-4" />
-            Download PDF
+            <Download className="w-4 h-4 flex-shrink-0" />
+            <span>Download PDF</span>
           </button>
         </div>
       </div>
 
-      <div id="statement-content" className="bg-white rounded-xl border p-6 mb-6">
+      <div id="statement-content" className="bg-white rounded-xl border p-4 sm:p-6 mb-6">
         {/* Statement Header */}
         <div className="flex flex-col items-center justify-center border-b pb-6 mb-6">
-          <img src="/icon.png" alt="IZTEXPORT" className="w-24 h-24 object-contain mb-2" />
-          <h1 className="text-2xl font-bold tracking-widest text-gray-900 uppercase">IZTEXPORT</h1>
+          <img src="/icon.png" alt="IZTEXPORT" className="w-16 h-16 sm:w-24 sm:h-24 object-contain mb-2" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-widest text-gray-900 uppercase">IZTEXPORT</h1>
         </div>
 
-        <div className="flex justify-between items-start border-b pb-4 mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start border-b pb-4 mb-4 gap-4">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">{party.name}</h2>
-            <p className="text-gray-500 capitalize mt-1">{party.party_type}</p>
-            {party.phone && <p className="text-gray-600 mt-1">Phone: {party.phone}</p>}
-            {party.address && <p className="text-gray-600">Address: {party.address}</p>}
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">{party.name}</h2>
+            <p className="text-sm sm:text-base text-gray-500 capitalize mt-1">{party.party_type}</p>
+            {party.phone && <p className="text-sm sm:text-base text-gray-600 mt-1">Phone: {party.phone}</p>}
+            {party.address && <p className="text-sm sm:text-base text-gray-600">Address: {party.address}</p>}
           </div>
-          <div className="text-right flex flex-col items-end">
-            <p className="text-sm text-gray-500">Current Balance</p>
-            <p className={`text-3xl font-bold ${party.current_balance > 0 ? (party.party_type === 'customer' ? 'text-green-600' : 'text-red-600') : party.current_balance < 0 ? (party.party_type === 'customer' ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
+          <div className="w-full sm:w-auto text-left sm:text-right flex flex-col items-start sm:items-end">
+            <p className="text-xs sm:text-sm text-gray-500">Current Balance</p>
+            <p className={`text-2xl sm:text-3xl font-bold ${party.current_balance > 0 ? (party.party_type === 'customer' ? 'text-green-600' : 'text-red-600') : party.current_balance < 0 ? (party.party_type === 'customer' ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
               ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
             </p>
-            <div className="flex flex-col gap-2 mt-3 print:hidden" data-html2canvas-ignore="true">
+            <div className="flex flex-wrap gap-2 mt-3 print:hidden w-full sm:w-auto" data-html2canvas-ignore="true">
               {party.party_type === 'customer' && (
                 <button 
                   onClick={openAddSaleModal}
-                  className="text-sm bg-black text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 sm:flex-none text-xs sm:text-sm bg-black text-white px-3 sm:px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 flex-shrink-0" />
                   Add+ Sale
                 </button>
               )}
               {party.party_type === 'factory' && (
                 <button 
                   onClick={openAddProductionModal}
-                  className="text-sm bg-black text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 sm:flex-none text-xs sm:text-sm bg-black text-white px-3 sm:px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 flex-shrink-0" />
                   Add+ Output
                 </button>
               )}
               <button 
                 onClick={() => setIsUpdateModalOpen(true)}
-                className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className="flex-1 sm:flex-none text-xs sm:text-sm bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 +/- Update Balance
               </button>
@@ -851,15 +868,15 @@ export default function PartyStatementPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+          <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="border-b bg-gray-50 text-sm">
-                <th className="p-3 font-semibold text-gray-600">Date</th>
+                <th className="p-3 font-semibold text-gray-600 whitespace-nowrap w-24">Date</th>
                 <th className="p-3 font-semibold text-gray-600">Particulars</th>
-                <th className="p-3 font-semibold text-gray-600 text-right">Bill Amount (₹)</th>
-                <th className="p-3 font-semibold text-gray-600 text-right">Transfer / Cash (₹)</th>
-                <th className="p-3 font-semibold text-gray-600 text-right">Balance (₹)</th>
+                <th className="p-3 font-semibold text-gray-600 text-right w-32">Bill Amount (₹)</th>
+                <th className="p-3 font-semibold text-gray-600 text-right w-32">Transfer / Cash (₹)</th>
+                <th className="p-3 font-semibold text-gray-600 text-right w-32">Balance (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -944,13 +961,13 @@ export default function PartyStatementPage() {
         </div>
 
         {/* Statement Footer */}
-        <div className="mt-12 pt-8 border-t flex flex-col sm:flex-row justify-between items-end gap-8">
-          <div className="text-[10px] text-gray-500 max-w-md text-justify leading-tight">
+        <div className="mt-12 pt-8 border-t flex flex-col sm:flex-row justify-between items-start sm:items-end gap-8">
+          <div className="text-[10px] text-gray-500 max-w-md text-justify leading-tight order-2 sm:order-1">
             <strong className="block text-gray-700 mb-1 text-xs uppercase">Terms & Conditions</strong>
             At IZTEXPORT, we sincerely value and appreciate the trust and support of our customers; as we manage cloth sourcing, garment manufacturing through factories, and timely supply operations, we kindly request all payments to be made on time for smooth business flow. A 5% tax will be applicable for bill generation for customers.
           </div>
-          <div className="flex flex-col items-center">
-            <div className="h-16 w-48 border-b-2 border-gray-300 border-dashed mb-2"></div>
+          <div className="flex flex-col items-center self-end order-1 sm:order-2">
+            <div className="h-16 w-40 sm:w-48 border-b-2 border-gray-300 border-dashed mb-2"></div>
             <p className="font-bold text-gray-800 uppercase text-sm tracking-widest">IZTEXPORT</p>
             <p className="text-xs text-gray-500">Authorized Signature</p>
           </div>

@@ -225,22 +225,23 @@ export default function PurchasesPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 pb-24">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+      <div className="flex justify-between items-center mb-6 gap-2">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          <button onClick={() => router.back()} className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Package className="w-6 h-6" />
-            Purchases History
+          <h2 className="text-lg sm:text-2xl font-bold flex items-center gap-2 truncate">
+            <Package className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
+            <span className="truncate">Purchases History</span>
           </h2>
         </div>
         <Link
           href="/purchases/add"
-          className="bg-black text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition-colors"
+          className="bg-black text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors flex-shrink-0 text-sm sm:text-base"
         >
-          <Plus className="w-4 h-4" />
-          Record Purchase
+          <Plus className="w-4 h-4 flex-shrink-0" />
+          <span className="hidden sm:inline">Record Purchase</span>
+          <span className="sm:hidden">Add</span>
         </Link>
       </div>
 
@@ -257,8 +258,8 @@ export default function PurchasesPage() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-4">
-          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto">
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto w-full sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <button
               onClick={() => setDateFilter('all')}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${dateFilter === 'all' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
@@ -279,7 +280,7 @@ export default function PurchasesPage() {
             </button>
           </div>
 
-          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto">
+          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto w-full sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <button
               onClick={() => setSortOrder('newest')}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${sortOrder === 'newest' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
@@ -321,11 +322,11 @@ export default function PurchasesPage() {
           <p>No purchase records found</p>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-3 sm:gap-4">
           {filteredPurchases.map(purchase => (
             <div 
               key={purchase.id} 
-              className={`relative group rounded-xl p-4 border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-gray-400 hover:shadow-md select-none ${isSelectionMode ? 'cursor-pointer' : ''} ${selectedIds.includes(purchase.id) ? 'bg-red-50 border-red-500' : 'bg-white'}`}
+              className={`relative group rounded-xl p-3 sm:p-4 border flex flex-row items-center justify-between gap-3 sm:gap-4 transition-all hover:border-gray-400 hover:shadow-md select-none ${isSelectionMode ? 'cursor-pointer' : ''} ${selectedIds.includes(purchase.id) ? 'bg-red-50 border-red-500' : 'bg-white'}`}
               onPointerDown={() => handlePressStart(purchase.id)}
               onPointerUp={handlePressEnd}
               onPointerCancel={handlePressEnd}
@@ -338,49 +339,52 @@ export default function PurchasesPage() {
               }}
               style={{ WebkitTouchCallout: 'none' }}
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                 {isSelectionMode && (
                   <div className="flex-shrink-0">
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(purchase.id)}
                       readOnly
-                      className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 pointer-events-none"
+                      className="w-4 h-4 sm:w-5 sm:h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 pointer-events-none"
                     />
                   </div>
                 )}
                 {purchase.color_image_url ? (
-                  <img src={purchase.color_image_url} alt={purchase.cloth_color} className="w-12 h-12 rounded-lg object-cover flex-shrink-0 border" />
+                  <img src={purchase.color_image_url} alt={purchase.cloth_color} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover flex-shrink-0 border" />
                 ) : (
-                  <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Package className="w-6 h-6 text-blue-500" />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Package className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
                   </div>
                 )}
-                <div>
-                  <h3 className="font-semibold text-lg">{purchase.supplier_name}</h3>
-                  <p className="text-sm text-gray-600">
-                    {purchase.meters.toLocaleString('en-IN')}m x {purchase.cloth_name} {purchase.cloth_color && `(${purchase.cloth_color})`} @ ₹{purchase.rate_per_meter.toLocaleString('en-IN')}/m
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-base sm:text-lg truncate">{purchase.supplier_name}</h3>
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">
+                    {purchase.meters.toLocaleString('en-IN')}m x {purchase.cloth_name} {purchase.cloth_color && `(${purchase.cloth_color})`}
+                  </p>
+                  <p className="text-[10px] sm:text-sm text-gray-500 truncate">
+                    @ ₹{purchase.rate_per_meter.toLocaleString('en-IN')}/m
                   </p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-xl font-bold text-red-600">
+              <div className="text-right flex-shrink-0 ml-2">
+                <p className="text-base sm:text-xl font-bold text-red-600">
                   ₹{purchase.total_amount.toLocaleString('en-IN')}
                 </p>
-                <div className="flex items-center justify-end gap-1 mt-1 text-xs text-gray-500">
+                <div className="flex items-center justify-end gap-1 mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-500">
                   <span>{new Date(purchase.purchase_date).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                   {purchase.note && (
-                    <FileText className="w-3.5 h-3.5 text-gray-400" />
+                    <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400 flex-shrink-0" />
                   )}
                 </div>
               </div>
 
               {/* Tooltip for Note */}
               {purchase.note && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
+                <div className="absolute bottom-full right-0 md:left-1/2 md:right-auto md:-translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-[calc(100vw-2rem)] md:max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
                   <span className="font-semibold text-gray-300">Note:</span> {purchase.note}
                   {/* Tooltip downward arrow */}
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                  <div className="absolute top-full right-6 md:left-1/2 md:right-auto md:-translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
                 </div>
               )}
 
@@ -391,15 +395,15 @@ export default function PurchasesPage() {
 
       {/* Selection Mode Bottom Bar */}
       {isSelectionMode && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-white shadow-2xl border rounded-full px-6 py-3 flex items-center gap-4 z-[100]">
-          <span className="font-medium text-sm text-gray-700 whitespace-nowrap">{selectedIds.length} selected</span>
-          <div className="w-px h-6 bg-gray-200"></div>
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-white shadow-2xl border rounded-full px-4 sm:px-6 py-2 sm:py-3 flex items-center gap-2 sm:gap-4 z-[100] w-[90%] sm:w-auto justify-center">
+          <span className="font-medium text-xs sm:text-sm text-gray-700 whitespace-nowrap">{selectedIds.length} selected</span>
+          <div className="w-px h-5 sm:h-6 bg-gray-200"></div>
           <button 
             onClick={handleDeleteClick}
             disabled={selectedIds.length === 0 || isDeleting}
-            className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+            className="flex items-center justify-center gap-1 sm:gap-2 bg-red-600 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
             Delete
           </button>
           <button 
@@ -407,10 +411,10 @@ export default function PurchasesPage() {
               setSelectedIds([]);
               setIsSelectionMode(false);
             }}
-            className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-1.5 sm:p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
             title="Cancel selection"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
           </button>
         </div>
       )}

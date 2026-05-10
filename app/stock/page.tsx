@@ -209,24 +209,24 @@ export default function StockPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+      <div className="flex items-center gap-3 sm:gap-4 mb-6">
+        <button onClick={() => router.back()} className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-2xl font-bold">Inventory</h2>
+        <h2 className="text-xl sm:text-2xl font-bold">Inventory</h2>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
         <button
           onClick={() => setActiveTab('cloth')}
-          className={`flex-1 py-3 px-4 rounded-xl font-medium transition-colors ${activeTab === 'cloth' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          className={`flex-1 py-2 sm:py-3 px-2 sm:px-4 rounded-xl text-sm sm:text-base font-medium transition-colors ${activeTab === 'cloth' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
         >
           Raw Cloth
         </button>
         <button
           onClick={() => setActiveTab('products')}
-          className={`flex-1 py-3 px-4 rounded-xl font-medium transition-colors ${activeTab === 'products' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          className={`flex-1 py-2 sm:py-3 px-2 sm:px-4 rounded-xl text-sm sm:text-base font-medium transition-colors ${activeTab === 'products' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
         >
           Finished Garments
         </button>
@@ -234,56 +234,57 @@ export default function StockPage() {
 
       {/* Summary Cards */}
       {activeTab === 'cloth' ? (
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-sm text-gray-500">Total Purchased</p>
-            <p className="text-2xl font-bold text-gray-900">{totalPurchased.toFixed(2)}m</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+          <div className="bg-white rounded-xl p-2 sm:p-4 border text-center sm:text-left flex flex-col justify-center">
+            <p className="text-[10px] sm:text-sm text-gray-500 leading-tight mb-1 sm:mb-0">Total Purchased</p>
+            <p className="text-sm sm:text-2xl font-bold text-gray-900 truncate">{totalPurchased.toFixed(2)}m</p>
           </div>
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-sm text-gray-500">Total Issued</p>
-            <p className="text-2xl font-bold text-blue-600">{totalIssued.toFixed(2)}m</p>
+          <div className="bg-white rounded-xl p-2 sm:p-4 border text-center sm:text-left flex flex-col justify-center">
+            <p className="text-[10px] sm:text-sm text-gray-500 leading-tight mb-1 sm:mb-0">Total Issued</p>
+            <p className="text-sm sm:text-2xl font-bold text-blue-600 truncate">{totalIssued.toFixed(2)}m</p>
           </div>
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-sm text-gray-500">Available</p>
-            <p className="text-2xl font-bold text-green-600">{totalRemaining.toFixed(2)}m</p>
+          <div className="bg-white rounded-xl p-2 sm:p-4 border text-center sm:text-left flex flex-col justify-center">
+            <p className="text-[10px] sm:text-sm text-gray-500 leading-tight mb-1 sm:mb-0">Available</p>
+            <p className="text-sm sm:text-2xl font-bold text-green-600 truncate">{totalRemaining.toFixed(2)}m</p>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-sm text-gray-500">Total Produced</p>
-            <p className="text-2xl font-bold text-gray-900">{productStocks.reduce((sum, p) => sum + p.produced, 0)}</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+          <div className="bg-white rounded-xl p-2 sm:p-4 border text-center sm:text-left flex flex-col justify-center">
+            <p className="text-[10px] sm:text-sm text-gray-500 leading-tight mb-1 sm:mb-0">Total Produced</p>
+            <p className="text-sm sm:text-2xl font-bold text-gray-900 truncate">{productStocks.reduce((sum, p) => sum + p.produced, 0)}</p>
           </div>
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-sm text-gray-500">Total Sold</p>
-            <p className="text-2xl font-bold text-blue-600">{productStocks.reduce((sum, p) => sum + p.sold, 0)}</p>
+          <div className="bg-white rounded-xl p-2 sm:p-4 border text-center sm:text-left flex flex-col justify-center">
+            <p className="text-[10px] sm:text-sm text-gray-500 leading-tight mb-1 sm:mb-0">Total Sold</p>
+            <p className="text-sm sm:text-2xl font-bold text-blue-600 truncate">{productStocks.reduce((sum, p) => sum + p.sold, 0)}</p>
           </div>
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-sm text-gray-500">Ready Stock</p>
-            <p className="text-2xl font-bold text-green-600">{productStocks.reduce((sum, p) => sum + p.quantity, 0)}</p>
+          <div className="bg-white rounded-xl p-2 sm:p-4 border text-center sm:text-left flex flex-col justify-center">
+            <p className="text-[10px] sm:text-sm text-gray-500 leading-tight mb-1 sm:mb-0">Ready Stock</p>
+            <p className="text-sm sm:text-2xl font-bold text-green-600 truncate">{productStocks.reduce((sum, p) => sum + p.quantity, 0)}</p>
           </div>
         </div>
       )}
 
       {/* Search and Sort */}
-      <div className="flex gap-4 mb-6">
+      <div className="flex gap-2 sm:gap-4 mb-6">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
+          <Search className="absolute left-3 top-3 sm:top-3.5 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
           <input
             type="text"
             placeholder={activeTab === 'cloth' ? "Search cloth..." : "Search garments..."}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border rounded-xl"
+            className="w-full pl-9 sm:pl-10 pr-4 py-2 sm:py-3 border rounded-xl text-sm sm:text-base outline-none focus:ring-2 focus:ring-black"
           />
         </div>
         {activeTab === 'cloth' && (
           <button
             onClick={() => setSortBy(sortBy === 'name' ? 'remaining' : 'name')}
-            className="flex items-center gap-2 px-4 py-3 border rounded-xl hover:bg-gray-50 whitespace-nowrap"
+            className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 sm:py-3 border rounded-xl hover:bg-gray-50 whitespace-nowrap text-sm sm:text-base"
           >
             <ArrowUpDown className="w-4 h-4" />
-            Sort by {sortBy === 'name' ? 'Quantity' : 'Name'}
+            <span className="hidden sm:inline">Sort by {sortBy === 'name' ? 'Quantity' : 'Name'}</span>
+            <span className="sm:hidden">Sort</span>
           </button>
         )}
       </div>
@@ -298,56 +299,56 @@ export default function StockPage() {
             </div>
           ) : (
             sortedStocks.map(stock => (
-              <div key={stock.id} className="relative group bg-white rounded-xl border p-4 transition-all hover:border-gray-400 hover:shadow-md">
-                <div className="flex items-start gap-4">
+              <div key={stock.id} className="relative group bg-white rounded-xl border p-3 sm:p-4 transition-all hover:border-gray-400 hover:shadow-md">
+                <div className="flex items-start gap-3 sm:gap-4">
                   {/* Thumbnail */}
                   {stock.purchase?.color_image_url ? (
                     <img
                       src={stock.purchase.color_image_url}
                       alt={stock.cloth_color}
-                      className="w-16 h-16 object-cover rounded-lg border"
+                      className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg border flex-shrink-0"
                     />
                   ) : (
-                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <Package className="w-6 h-6 text-gray-400" />
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Package className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
                     </div>
                   )}
 
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-semibold text-lg">{stock.cloth_name}</h3>
+                      <div className="min-w-0 pr-2">
+                        <h3 className="font-semibold text-base sm:text-lg truncate">{stock.cloth_name}</h3>
                         {stock.cloth_color && (
-                          <p className="text-sm text-gray-600">{stock.cloth_color}</p>
+                          <p className="text-xs sm:text-sm text-gray-600 truncate">{stock.cloth_color}</p>
                         )}
                       </div>
-                      <div className="text-right">
-                        <div className="flex items-center justify-end gap-2 mb-1">
-                          <p className="text-2xl font-bold text-green-600">
+                      <div className="text-right flex-shrink-0">
+                        <div className="flex items-center justify-end gap-1 sm:gap-2 mb-1">
+                          <p className="text-lg sm:text-2xl font-bold text-green-600">
                             {stock.meters_remaining.toFixed(2)}m
                           </p>
-                          <button onClick={() => setClearingStock(stock)} className="relative z-10 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Clear Stock">
-                            <X className="w-5 h-5" />
+                          <button onClick={() => setClearingStock(stock)} className="relative z-10 p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Clear Stock">
+                            <X className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                         </div>
                         <div className="flex items-center justify-end gap-1">
-                          <p className="text-xs text-gray-500">available</p>
+                          <p className="text-[10px] sm:text-xs text-gray-500">available</p>
                           {(stock.note || stock.purchase?.note) && (
-                            <FileText className="w-3.5 h-3.5 text-gray-400" />
+                            <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400" />
                           )}
                         </div>
                       </div>
                     </div>
 
                     {/* Progress Bar */}
-                    <div className="mt-3">
-                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <div className="mt-2 sm:mt-3">
+                      <div className="flex justify-between text-[10px] sm:text-xs text-gray-500 mb-1">
                         <span>Issued: {stock.meters_issued}m</span>
                         <span>Total: {stock.meters_purchased}m</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className="bg-blue-600 h-2 rounded-full"
+                          className="bg-blue-600 h-1.5 sm:h-2 rounded-full"
                           style={{ 
                             width: `${(stock.meters_issued / stock.meters_purchased * 100)}%` 
                           }}
@@ -376,29 +377,29 @@ export default function StockPage() {
             </div>
           ) : (
             filteredProductStocks.map(stock => (
-              <div key={stock.product_type} className="bg-white rounded-xl border p-4">
+              <div key={stock.product_type} className="bg-white rounded-xl border p-3 sm:p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center">
-                      <Shirt className="w-6 h-6 text-indigo-500" />
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Shirt className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-500" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-lg">{stock.product_type}</h3>
-                      <p className="text-sm text-gray-500">
+                    <div className="min-w-0 pr-2">
+                      <h3 className="font-semibold text-base sm:text-lg truncate">{stock.product_type}</h3>
+                      <p className="text-xs sm:text-sm text-gray-500 truncate">
                         Produced: {stock.produced} • Sold: {stock.sold}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="flex items-center justify-end gap-2 mb-1">
-                      <p className="text-2xl font-bold text-green-600">
+                  <div className="text-right flex-shrink-0">
+                    <div className="flex items-center justify-end gap-1 sm:gap-2 mb-1">
+                      <p className="text-lg sm:text-2xl font-bold text-green-600">
                         {stock.quantity.toLocaleString('en-IN')}
                       </p>
-                      <button onClick={() => setClearingProduct(stock)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Clear Garment Stock">
-                        <X className="w-5 h-5" />
+                      <button onClick={() => setClearingProduct(stock)} className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Clear Garment Stock">
+                        <X className="w-4 h-4 sm:w-5 sm:h-5" />
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500">available</p>
+                    <p className="text-[10px] sm:text-xs text-gray-500">available</p>
                   </div>
                 </div>
               </div>
@@ -409,29 +410,29 @@ export default function StockPage() {
 
       {/* Recent Sales Section */}
       {activeTab === 'products' && (
-        <div className="mt-10">
-          <h3 className="text-xl font-bold mb-4">Recent 5 Sales</h3>
+        <div className="mt-8 sm:mt-10">
+          <h3 className="text-lg sm:text-xl font-bold mb-4">Recent 5 Sales</h3>
           <div className="space-y-3">
             {recentSales.length > 0 ? (
               recentSales.map(sale => (
-                <div key={sale.id} className="relative group bg-white rounded-xl border p-4 flex justify-between items-center transition-all hover:border-gray-400 hover:shadow-md">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
-                      <Shirt className="w-6 h-6 text-orange-500" />
+                <div key={sale.id} className="relative group bg-white rounded-xl border p-3 sm:p-4 flex justify-between items-center transition-all hover:border-gray-400 hover:shadow-md">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Shirt className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-lg">{sale.product_type}</h3>
-                      <p className="text-sm text-gray-500">To: {sale.customer_name}</p>
+                    <div className="min-w-0 pr-2">
+                      <h3 className="font-semibold text-base sm:text-lg truncate">{sale.product_type}</h3>
+                      <p className="text-xs sm:text-sm text-gray-500 truncate">To: {sale.customer_name}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-red-600">
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-lg sm:text-xl font-bold text-red-600">
                       -{sale.quantity.toLocaleString('en-IN')}
                     </p>
-                    <div className="flex items-center justify-end gap-1 mt-1 text-xs text-gray-400">
+                    <div className="flex items-center justify-end gap-1 mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-400">
                       <span>{new Date(sale.date).toLocaleDateString()}</span>
                       {sale.note && (
-                        <FileText className="w-3.5 h-3.5 text-gray-400" />
+                        <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400" />
                       )}
                     </div>
                   </div>
