@@ -668,9 +668,10 @@ export default function PartyStatementPage() {
             // Fix overflow on mobile so table doesn't get clipped
             const tableWrappers = clonedElement.querySelectorAll('.overflow-x-auto')
             tableWrappers.forEach(wrapper => {
-              (wrapper as HTMLElement).style.overflow = 'visible'
-              (wrapper as HTMLElement).style.overflowX = 'visible'
-              wrapper.classList.remove('-mx-4', 'px-4') // Remove mobile margin/padding tweaks
+              const htmlWrapper = wrapper as HTMLElement
+              htmlWrapper.style.overflow = 'visible'
+              htmlWrapper.style.overflowX = 'visible'
+              htmlWrapper.classList.remove('-mx-4', 'px-4') // Remove mobile margin/padding tweaks
             })
           }
         }
