@@ -1157,7 +1157,10 @@ export default function PartyStatementPage() {
             At IZTEXPORT, we sincerely value and appreciate the trust and support of our customers; as we manage cloth sourcing, garment manufacturing through factories, and timely supply operations, we kindly request all payments to be made on time for smooth business flow. A 5% tax will be applicable for bill generation for customers.
           </div>
           <div className="flex flex-col items-center self-end order-1 sm:order-2">
-            <div className="h-16 w-40 sm:w-48 border-b-2 border-gray-300 border-dashed mb-2"></div>
+            <div className="h-20 w-40 sm:w-48 border-b-2 border-gray-300 border-dashed mb-2 flex items-end justify-center pb-1">
+              
+              <img src="/sign.jpg" alt="Signature" className="max-h-full max-w-full object-contain" />
+            </div>
             <p className="font-bold text-gray-800 uppercase text-sm tracking-widest">IZTEXPORT</p>
             <p className="text-xs text-gray-500">Authorized Signature</p>
           </div>
