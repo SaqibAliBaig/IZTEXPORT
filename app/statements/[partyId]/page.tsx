@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, FileText, Printer, X, Plus, Search, ArrowRight, Download, Package, Factory, Calendar } from 'lucide-react'
+import { ArrowLeft, FileText, Printer, X, Plus, Search, ArrowRight, Download, Package, Factory, Calendar, Edit2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas-pro'
@@ -16,6 +16,7 @@ interface Party {
   address: string
   opening_balance: number
   current_balance: number
+  created_at: string
 }
 
 interface LedgerEntry {
@@ -25,6 +26,7 @@ interface LedgerEntry {
   amount: number
   note: string
   related_type: string
+  related_id?: string
   created_at: string
 }
 interface ClothIssue {
@@ -102,6 +104,14 @@ export default function PartyStatementPage() {
     note: ''
   })
 
+  const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null)
+  const [editEntryFormData, setEditEntryFormData] = useState({
+    amount: '',
+    note: '',
+    entry_date: ''
+  })
+  const [deletingEntry, setDeletingEntry] = useState<LedgerEntry | null>(null)
+
   useEffect(() => {
     if (partyId) {
       fetchStatement()
@@ -143,7 +153,19 @@ export default function PartyStatementPage() {
       .order('created_at', { ascending: true })
 
     if (ledgerData) {
-      setEntries(ledgerData)
+      // Filter out duplicate opening balance ledger entry if it was created by the add-balance bug
+      const cleanedData = ledgerData.filter((entry, index) => {
+        if (
+          index === 0 && 
+          entry.related_type === 'adjustment' && 
+          entry.amount === partyData.opening_balance
+        ) {
+           const timeDiff = Math.abs(new Date(entry.created_at).getTime() - new Date(partyData.created_at).getTime());
+           if (timeDiff < 5000) return false;
+        }
+        return true;
+      });
+      setEntries(cleanedData)
     }
     
     setLoading(false)
@@ -647,6 +669,133 @@ export default function PartyStatementPage() {
     }
   }
 
+  const handleEditEntryClick = (entry: LedgerEntry) => {
+    if (entry.id === 'manual-adjustment') return;
+    
+    setEditingEntry(entry)
+    setEditEntryFormData({
+      amount: entry.amount.toString(),
+      note: entry.note || '',
+      entry_date: entry.entry_date || new Date().toISOString().split('T')[0]
+    })
+  }
+
+  const handleSaveEntryEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingEntry || !party) return
+
+    const newAmount = parseFloat(editEntryFormData.amount)
+    if (isNaN(newAmount) || newAmount < 0) {
+      toast.error('Please enter a valid amount')
+      return
+    }
+
+    setIsUpdating(true)
+    try {
+      const amountDiff = newAmount - editingEntry.amount
+      
+      const { error: ledgerError } = await supabase
+        .from('ledger_entries')
+        .update({
+          amount: newAmount,
+          note: editEntryFormData.note,
+          entry_date: editEntryFormData.entry_date
+        })
+        .eq('id', editingEntry.id)
+
+      if (ledgerError) throw ledgerError
+
+      if (amountDiff !== 0) {
+        let newBalance = party.current_balance
+        const isCustomer = party.party_type === 'customer'
+        if (isCustomer) {
+          if (editingEntry.entry_type === 'debit') newBalance += amountDiff
+          else newBalance -= amountDiff
+        } else {
+          if (editingEntry.entry_type === 'credit') newBalance += amountDiff
+          else newBalance -= amountDiff
+        }
+
+        const { error: partyError } = await supabase
+          .from('parties')
+          .update({ current_balance: newBalance })
+          .eq('id', party.id)
+
+        if (partyError) throw partyError
+        
+        // Update related records
+        if (editingEntry.related_id) {
+          if (editingEntry.related_type === 'payment') {
+             await supabase.from('payments').update({ amount: newAmount }).eq('id', editingEntry.related_id)
+          } else if (editingEntry.related_type === 'sale') {
+             await supabase.from('sales').update({ total_amount: newAmount }).eq('id', editingEntry.related_id)
+          } else if (editingEntry.related_type === 'production') {
+             await supabase.from('production_records').update({ total_value: newAmount }).eq('id', editingEntry.related_id)
+          }
+        }
+      }
+
+      toast.success('Entry updated successfully')
+      setEditingEntry(null)
+      fetchStatement()
+    } catch (error: any) {
+      toast.error('Failed to update entry: ' + error.message)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleConfirmDeleteEntry = async () => {
+    if (!deletingEntry || !party) return;
+    setIsUpdating(true)
+    try {
+      // Delete the ledger entry
+      const { error: ledgerError } = await supabase
+        .from('ledger_entries')
+        .delete()
+        .eq('id', deletingEntry.id)
+
+      if (ledgerError) throw ledgerError
+
+      // Revert party balance
+      let newBalance = party.current_balance
+      const isCustomer = party.party_type === 'customer'
+      if (isCustomer) {
+        if (deletingEntry.entry_type === 'debit') newBalance -= deletingEntry.amount
+        else newBalance += deletingEntry.amount
+      } else {
+        if (deletingEntry.entry_type === 'credit') newBalance -= deletingEntry.amount
+        else newBalance += deletingEntry.amount
+      }
+
+      const { error: partyError } = await supabase
+        .from('parties')
+        .update({ current_balance: newBalance })
+        .eq('id', party.id)
+
+      if (partyError) throw partyError
+
+      // Optionally delete related records
+      if (deletingEntry.related_id) {
+        if (deletingEntry.related_type === 'payment') {
+           await supabase.from('payments').delete().eq('id', deletingEntry.related_id)
+        } else if (deletingEntry.related_type === 'sale') {
+           await supabase.from('sales').delete().eq('id', deletingEntry.related_id)
+        } else if (deletingEntry.related_type === 'production') {
+           await supabase.from('production_records').delete().eq('id', deletingEntry.related_id)
+        }
+      }
+
+      toast.success('Entry deleted successfully')
+      setDeletingEntry(null)
+      fetchStatement()
+    } catch (error: any) {
+      toast.error('Failed to delete entry: ' + error.message)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
   const handleDownloadPDF = async () => {
     const element = document.getElementById('statement-content')
     if (!element || !party) return
@@ -785,6 +934,11 @@ export default function PartyStatementPage() {
     return note;
   };
 
+  const formatBalance = (amount: number) => {
+    if (amount === 0) return '₹0'
+    return amount < 0 ? `-₹${Math.abs(amount).toLocaleString('en-IN')}` : `₹${amount.toLocaleString('en-IN')}`
+  }
+
   // Add Sale Modal Calculations
   const saleQuantity = parseInt(saleFormData.quantity) || 0
   const saleRate = parseFloat(saleFormData.rate) || 0
@@ -837,6 +991,7 @@ export default function PartyStatementPage() {
         <div className="flex flex-col items-center justify-center border-b pb-6 mb-6">
           <img src="/icon.png" alt="IZTEXPORT" className="w-16 h-16 sm:w-24 sm:h-24 object-contain mb-2" />
           <h1 className="text-xl sm:text-2xl font-bold tracking-widest text-gray-900 uppercase">IZTEXPORT</h1>
+          <p className="text-sm sm:text-base font-medium text-gray-600 tracking-wider uppercase mt-1">BANGALORE</p>
         </div>
 
         <div className="flex flex-col sm:flex-row justify-between items-start border-b pb-4 mb-4 gap-4">
@@ -849,7 +1004,7 @@ export default function PartyStatementPage() {
           <div className="w-full sm:w-auto text-left sm:text-right flex flex-col items-start sm:items-end">
             <p className="text-xs sm:text-sm text-gray-500">Current Balance</p>
             <p className={`text-2xl sm:text-3xl font-bold ${party.current_balance > 0 ? (party.party_type === 'customer' ? 'text-green-600' : 'text-red-600') : party.current_balance < 0 ? (party.party_type === 'customer' ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
-              ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
+              {formatBalance(party.current_balance)}
             </p>
             <div className="flex flex-wrap gap-2 mt-3 print:hidden w-full sm:w-auto" data-html2canvas-ignore="true">
               {party.party_type === 'customer' && (
@@ -888,15 +1043,17 @@ export default function PartyStatementPage() {
                 <th className="p-3 font-semibold text-gray-600">Particulars</th>
                 <th className="p-3 font-semibold text-gray-600 text-right w-32">Bill Amount (₹)</th>
                 <th className="p-3 font-semibold text-gray-600 text-right w-32">Transfer / Cash (₹)</th>
-                <th className="p-3 font-semibold text-gray-600 text-right w-32">Balance (₹)</th>
+                <th className="p-3 font-semibold text-gray-600 text-right w-32 relative">
+                  <span className="pr-16">Balance (₹)</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b-2 border-gray-300 bg-gray-100">
                 <td colSpan={2} className="p-3 font-bold text-gray-900 text-right">Opening Balance</td>
                 <td colSpan={2} className="p-3"></td>
-                <td className="p-3 text-right font-bold text-gray-900">
-                  ₹{Math.abs(party.opening_balance || 0).toLocaleString('en-IN')}
+                <td className="p-3 text-right font-bold text-gray-900 relative">
+                  <span className="pr-16">{formatBalance(party.opening_balance || 0)}</span>
                 </td>
               </tr>
               
@@ -922,10 +1079,10 @@ export default function PartyStatementPage() {
                     <React.Fragment key={row.id}>
                       {needsDivider && (
                         <tr>
-                          <td colSpan={5} className="h-4 bg-gray-100 border-y border-gray-200"></td>
+                          <td colSpan={5} className="h-4 bg-gray-100 border-y border-gray-200 print:hidden" data-html2canvas-ignore="true"></td>
                         </tr>
                       )}
-                      <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50 group">
                     <td className="p-3 whitespace-nowrap text-sm">
                       {new Date(row.entry_date).toLocaleDateString('en-IN', {
                         year: 'numeric',
@@ -938,12 +1095,12 @@ export default function PartyStatementPage() {
                       <p className="text-sm text-gray-500">{renderNote(row.note)}</p>
                       {billAmount !== null && row.related_type !== 'adjustment' && (
                         <p className="text-xs font-medium text-gray-600 mt-1 bg-red-50 inline-block px-2 py-0.5 rounded border border-red-100">
-                          Old Balance: ₹{Math.abs(row.oldBalance).toLocaleString('en-IN')} + Bill: ₹{billAmount.toLocaleString('en-IN')} = Total: ₹{Math.abs(row.balance).toLocaleString('en-IN')}
+                          (Old-Balance) {formatBalance(row.oldBalance)} + ₹{billAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
                         </p>
                       )}
                       {paymentAmount !== null && row.related_type !== 'adjustment' && (
                         <p className="text-xs font-medium text-gray-600 mt-1 bg-green-50 inline-block px-2 py-0.5 rounded border border-green-100">
-                          Old Balance: ₹{Math.abs(row.oldBalance).toLocaleString('en-IN')} - Paid: ₹{paymentAmount.toLocaleString('en-IN')} = Total: ₹{Math.abs(row.balance).toLocaleString('en-IN')}
+                          (Old-Balance) {formatBalance(row.oldBalance)} - ₹{paymentAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
                         </p>
                       )}
                     </td>
@@ -953,8 +1110,29 @@ export default function PartyStatementPage() {
                     <td className="p-3 text-right text-green-600 font-medium">
                       {paymentAmount !== null ? '₹' + paymentAmount.toLocaleString('en-IN') : '-'}
                     </td>
-                    <td className="p-3 text-right font-bold text-gray-900">
-                      ₹{Math.abs(row.balance).toLocaleString('en-IN')}
+                    <td className="p-3 text-right font-bold text-gray-900 relative">
+                      <span className="pr-16">{formatBalance(row.balance)}</span>
+                      {row.id !== 'manual-adjustment' && (
+                        <div 
+                          className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity print:hidden"
+                          data-html2canvas-ignore="true"
+                        >
+                          <button 
+                            onClick={() => handleEditEntryClick(row)}
+                            className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-200 rounded" 
+                            title="Edit Entry"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => setDeletingEntry(row)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" 
+                            title="Delete Entry"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                     </React.Fragment>
@@ -964,8 +1142,8 @@ export default function PartyStatementPage() {
               <tr className="border-t-2 border-gray-300 bg-gray-100 print:bg-gray-100">
                 <td colSpan={2} className="p-3 font-bold text-gray-900 text-right">Closing Balance</td>
                 <td colSpan={2} className="p-3"></td>
-                <td className="p-3 text-right font-bold text-gray-900">
-                  ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
+                <td className="p-3 text-right font-bold text-gray-900 relative">
+                  <span className="pr-16">{formatBalance(party.current_balance)}</span>
                 </td>
               </tr>
             </tbody>
@@ -1360,13 +1538,13 @@ export default function PartyStatementPage() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Previous Dues</span>
                     <span className={`font-semibold ${saleOldBalance > 0 ? 'text-green-600' : saleOldBalance < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                      ₹{Math.abs(saleOldBalance).toLocaleString('en-IN')}
+                      {formatBalance(saleOldBalance)}
                     </span>
                   </div>
                   <div className="border-t pt-2 flex justify-between">
                     <span className="text-gray-900 font-medium">Total Due</span>
                     <span className="text-lg font-bold">
-                      ₹{Math.abs(saleTotalDue).toLocaleString('en-IN')}
+                      {formatBalance(saleTotalDue)}
                     </span>
                   </div>
                 </div>
@@ -1436,7 +1614,7 @@ export default function PartyStatementPage() {
                   <div className="flex justify-between items-center">
                     <span className="text-blue-900 font-medium">Final Statement Balance</span>
                     <span className={`text-lg font-bold ${saleNewBalance > 0 ? 'text-green-600' : saleNewBalance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                      ₹{Math.abs(saleNewBalance).toLocaleString('en-IN')}
+                      {formatBalance(saleNewBalance)}
                     </span>
                   </div>
                 </div>
@@ -1470,6 +1648,104 @@ export default function PartyStatementPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Entry Modal */}
+      {editingEntry && party && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Edit Entry</h3>
+              <button onClick={() => setEditingEntry(null)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveEntryEdit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input 
+                  type="date" 
+                  required
+                  value={editEntryFormData.entry_date}
+                  onChange={(e) => setEditEntryFormData({ ...editEntryFormData, entry_date: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  required
+                  value={editEntryFormData.amount}
+                  onChange={(e) => setEditEntryFormData({ ...editEntryFormData, amount: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note / Particulars</label>
+                <textarea 
+                  value={editEntryFormData.note}
+                  onChange={(e) => setEditEntryFormData({ ...editEntryFormData, note: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+
+              <div className="pt-4 mt-6 border-t flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setEditingEntry(null)}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isUpdating}
+                  className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {isUpdating ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Entry Modal */}
+      {deletingEntry && party && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Delete Entry</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to completely remove this entry? This action cannot be undone and will update the party's balance.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingEntry(null)}
+                className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+                disabled={isUpdating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteEntry}
+                disabled={isUpdating}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                {isUpdating ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

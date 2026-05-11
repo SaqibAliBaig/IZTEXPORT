@@ -59,6 +59,11 @@ export default function StatementsPage() {
     }
   }
 
+  const formatBalance = (amount: number) => {
+    if (amount === 0) return '₹0'
+    return amount < 0 ? `-₹${Math.abs(amount).toLocaleString('en-IN')}` : `₹${amount.toLocaleString('en-IN')}`
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 pb-24">
       <div className="flex items-center gap-2 sm:gap-4 mb-6 min-w-0">
@@ -129,7 +134,7 @@ export default function StatementsPage() {
               <div className="text-right">
                 <p className="text-[10px] sm:text-sm text-gray-500">Balance</p>
                 <p className={`font-bold text-sm sm:text-base ${party.current_balance > 0 ? 'text-green-600' : party.current_balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                  ₹{Math.abs(party.current_balance).toLocaleString('en-IN')}
+                  {formatBalance(party.current_balance)}
                 </p>
               </div>
               <FileText className="hidden sm:block w-5 h-5 text-gray-400 flex-shrink-0" />

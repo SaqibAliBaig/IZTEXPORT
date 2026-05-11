@@ -460,7 +460,7 @@ export default function Dashboard() {
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalCloth.toLocaleString('en-IN')}m</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalCloth.toLocaleString('en-IN')} mtrs</p>
             </div>
             <Package className="w-8 h-8 text-blue-500" />
           </div>
@@ -475,7 +475,7 @@ export default function Dashboard() {
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalIssued.toLocaleString('en-IN')}m</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalIssued.toLocaleString('en-IN')} mtrs</p>
             </div>
             <Factory className="w-8 h-8 text-green-500" />
           </div>
@@ -492,7 +492,7 @@ export default function Dashboard() {
                       <p className="text-xs text-gray-500 truncate">To: {ri.factory_name}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-green-600">{ri.meters_given.toLocaleString('en-IN')}m</p>
+                      <p className="text-sm font-bold text-green-600">{ri.meters_given.toLocaleString('en-IN')} mtrs</p>
                       <p className="text-[10px] text-gray-400">{new Date(ri.date).toLocaleDateString()}</p>
                     </div>
                   </div>
@@ -511,7 +511,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 mb-1">Cloth Remaining</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalRemaining.toLocaleString('en-IN')}m</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalRemaining.toLocaleString('en-IN')} mtrs</p>
             </div>
             <Warehouse className="w-8 h-8 text-teal-500" />
           </div>
@@ -547,7 +547,7 @@ export default function Dashboard() {
                         onClick={(e) => handleClothHoverEditClick(e, c)}
                         className="text-sm font-medium whitespace-nowrap text-gray-900 cursor-pointer hover:underline"
                         title="Click to edit"
-                      >{c.meters_remaining.toLocaleString('en-IN')}m</span>
+                      >{c.meters_remaining.toLocaleString('en-IN')} mtrs</span>
                     )}
                   </div>
                 ))
@@ -824,6 +824,14 @@ export default function Dashboard() {
             <Truck className="w-6 h-6 mx-auto mb-2 text-pink-500" />
             <span className="text-sm">All Suppliers</span>
           </Link>
+
+          <Link 
+            href="/add-balance"
+            className="bg-white p-4 rounded-xl border text-center transition-all hover:border-gray-400 hover:shadow-md"
+          >
+            <DollarSign className="w-6 h-6 mx-auto mb-2 text-amber-500" />
+            <span className="text-sm">Add Balance</span>
+          </Link>
         </div>
       </div>
 
@@ -904,7 +912,7 @@ export default function Dashboard() {
               View past reset history
             </Link>
             <p className="text-gray-600 mb-6">
-              This will save a snapshot of your inventory and completely clear the <strong>Total Cloth</strong> and <strong>Issued</strong> metrics back to 0m.
+              This will save a snapshot of your inventory and completely clear the <strong>Total Cloth</strong> and <strong>Issued</strong> metrics back to 0 mtrs.
             </p>
             <div className="flex gap-3">
               <button
@@ -933,7 +941,7 @@ export default function Dashboard() {
             <RotateCcw className="w-12 h-12 text-green-500 mx-auto mb-4" />
             <h3 className="text-xl font-bold mb-1">Reset Issued to Factory</h3>
             <p className="text-gray-600 mb-6">
-              This will return all <strong>{stats.totalIssued.toLocaleString('en-IN')}m</strong> of currently issued cloth back to your <strong>Cloth Remaining</strong> inventory. Your historical issue records will be preserved.
+              This will return all <strong>{stats.totalIssued.toLocaleString('en-IN')} mtrs</strong> of currently issued cloth back to your <strong>Cloth Remaining</strong> inventory. Your historical issue records will be preserved.
             </p>
             <div className="flex gap-3">
               <button

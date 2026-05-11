@@ -127,6 +127,11 @@ export default function AddSalePage() {
   const availableStock = productStocks.find(p => p.product_type === formData.product_type)?.quantity || 0
   const remainingStock = availableStock - quantity
 
+  const formatBalance = (amount: number) => {
+    if (amount === 0) return '₹0'
+    return amount < 0 ? `-₹${Math.abs(amount).toLocaleString('en-IN')}` : `₹${amount.toLocaleString('en-IN')}`
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -462,13 +467,13 @@ export default function AddSalePage() {
               <div className="flex justify-between">
                 <span className="text-gray-600">Previous Dues</span>
                 <span className="font-semibold text-orange-600">
-                  ₹{Math.abs(oldBalance).toLocaleString('en-IN')}
+                  {formatBalance(oldBalance)}
                 </span>
               </div>
               <div className="border-t pt-2 flex justify-between">
                 <span className="text-gray-900 font-medium">Total Due</span>
                 <span className="text-lg font-bold">
-                  ₹{Math.abs(totalDue).toLocaleString('en-IN')}
+                  {formatBalance(totalDue)}
                 </span>
               </div>
             </div>
@@ -493,7 +498,7 @@ export default function AddSalePage() {
               <div className="flex justify-between items-center">
                 <span className="text-blue-900 font-medium">Final Statement Balance</span>
                 <span className={`text-lg font-bold ${newBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  ₹{Math.abs(newBalance).toLocaleString('en-IN')}
+                  {formatBalance(newBalance)}
                 </span>
               </div>
             </div>
