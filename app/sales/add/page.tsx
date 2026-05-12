@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Users, Package, DollarSign, Search, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Users, Package, DollarSign, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Customer {
@@ -19,12 +19,11 @@ export default function AddSalePage() {
   const [customersList, setCustomersList] = useState<{id: string, name: string, current_balance: number}[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<{id: string, name: string, current_balance: number} | null>(null)
   const [customerName, setCustomerName] = useState('')
-  const [openingBalance, setOpeningBalance] = useState('0')
+  const [openingBalance, setOpeningBalance] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [productStocks, setProductStocks] = useState<{ product_type: string, quantity: number }[]>([])
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [showProductDropdown, setShowProductDropdown] = useState(false)
-  const [isNewProduct, setIsNewProduct] = useState(false)
   const [productsLoading, setProductsLoading] = useState(true)
   const [showDropdown, setShowDropdown] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -32,7 +31,8 @@ export default function AddSalePage() {
     product_type: '',
     quantity: '',
     rate: '',
-    paid_amount: '0',
+    paid_amount: '',
+    payment_mode: 'cash',
     sale_date: new Date().toISOString().split('T')[0],
     note: ''
   })
@@ -41,13 +41,6 @@ export default function AddSalePage() {
     fetchCustomers()
     fetchProductStock()
   }, [])
-
-  useEffect(() => {
-    if (formData.product_type) {
-      const isNew = !productStocks.some(p => p.product_type === formData.product_type)
-      setIsNewProduct(isNew)
-    }
-  }, [formData.product_type, productStocks])
 
   const fetchCustomers = async () => {
     const { data } = await supabase
@@ -111,7 +104,9 @@ export default function AddSalePage() {
     const pStocks = Array.from(productMap.entries()).map(([product_type, { produced, sold }]) => ({
       product_type,
       quantity: Math.max(0, produced - sold)
-    })).sort((a, b) => a.product_type.localeCompare(b.product_type));
+    }))
+    .filter(p => p.quantity > 0)
+    .sort((a, b) => a.product_type.localeCompare(b.product_type));
 
     setProductStocks(pStocks)
     setProductsLoading(false)
@@ -147,9 +142,17 @@ export default function AddSalePage() {
       return
     }
 
-    if (!isNewProduct && quantity > availableStock) {
+    if (quantity > availableStock) {
       toast.error(`Cannot sell more than available stock (${availableStock})`)
       return;
+    }
+
+    if (totalDue > 0 && paidNow > totalDue) {
+      toast.error(`Paid amount cannot exceed total due (₹${totalDue.toLocaleString('en-IN')})`)
+      return
+    } else if (totalDue <= 0 && paidNow > 0) {
+      toast.error('Cannot make a payment when there is no due')
+      return
     }
 
     setIsSubmitting(true)
@@ -163,7 +166,8 @@ export default function AddSalePage() {
         name: customerName.trim(),
         party_type: 'customer',
         current_balance: newBalance,
-        opening_balance: oldBalance
+        opening_balance: oldBalance,
+        note: formData.note || null
       })
       .select()
       .single()
@@ -254,7 +258,7 @@ export default function AddSalePage() {
           related_id: sale.id,
           amount: paidNow,
           payment_date: formData.sale_date,
-          payment_mode: 'cash',
+          payment_mode: formData.payment_mode,
           note: `Payment for sale: ${formData.product_type}`
         })
         .select()
@@ -321,6 +325,7 @@ export default function AddSalePage() {
                     <button
                       type="button"
                       key={name}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         setCustomerName(name)
                         setShowCustomerDropdown(false)
@@ -337,7 +342,18 @@ export default function AddSalePage() {
 
         {/* Opening Balance */}
         <div className="bg-white rounded-xl p-4 border">
-          <label className="block text-sm font-medium mb-2">Previous Unpaid Balance (₹) {selectedCustomer ? '(Auto-filled)' : '(Optional)'}</label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-medium">Previous Unpaid Balance (₹) {selectedCustomer ? '(Auto-filled)' : '(Optional)'}</label>
+            {parseFloat(openingBalance || '0') !== 0 && (
+              <button
+                type="button"
+                onClick={() => setOpeningBalance('')}
+                className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium"
+              >
+                Start Fresh Statement (Set to 0)
+              </button>
+            )}
+          </div>
           <input
             type="number"
             step="0.01"
@@ -348,7 +364,7 @@ export default function AddSalePage() {
           />
           <p className="text-xs text-gray-500 mt-1">
             {selectedCustomer 
-              ? 'Current balance from existing statement. You can modify this if needed.' 
+              ? 'Current balance from existing statement. You can modify this to 0 to start a fresh statement without carrying over previous dues.' 
               : 'Set this to carry over any previous unpaid dues into this new statement.'}
           </p>
         </div>
@@ -363,13 +379,12 @@ export default function AddSalePage() {
                   <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
                   <input
                     type="text"
-                    placeholder={productsLoading ? 'Loading products...' : 'Search or enter new product...'}
+                    placeholder={productsLoading ? 'Loading products...' : 'Search product...'}
                     value={productSearchQuery}
                     onChange={(e) => {
                       setProductSearchQuery(e.target.value)
                       setShowProductDropdown(true)
                       if (formData.product_type) setFormData({ ...formData, product_type: '' })
-                      if (isNewProduct) setIsNewProduct(false)
                     }}
                     onFocus={() => setShowProductDropdown(true)}
                     onBlur={() => setTimeout(() => setShowProductDropdown(false), 200)}
@@ -378,14 +393,9 @@ export default function AddSalePage() {
                     required
                   />
                 </div>
-                {formData.product_type && !isNewProduct && (
+                {formData.product_type && (
                   <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium whitespace-nowrap">
                     ✓ In Stock
-                  </span>
-                )}
-                {isNewProduct && (
-                  <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium whitespace-nowrap flex items-center justify-center">
-                    <ArrowRight className="w-4 h-4 mr-1" /> New
                   </span>
                 )}
               </div>
@@ -395,7 +405,7 @@ export default function AddSalePage() {
                   {productStocks
                     .filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase()))
                     .map(stock => (
-                      <button type="button" key={stock.product_type} onClick={() => {
+                      <button type="button" key={stock.product_type} onMouseDown={(e) => e.preventDefault()} onClick={() => {
                         setFormData({ ...formData, product_type: stock.product_type })
                         setProductSearchQuery(stock.product_type)
                         setShowProductDropdown(false)
@@ -404,16 +414,10 @@ export default function AddSalePage() {
                         <div className="text-sm text-gray-500">Available: {stock.quantity}</div>
                       </button>
                     ))}
-                  {productSearchQuery.trim() && !productStocks.some(p => p.product_type.toLowerCase() === productSearchQuery.toLowerCase()) && (
-                    <button type="button" onClick={() => {
-                      const newProduct = productSearchQuery.trim()
-                      const capitalizedNewProduct = newProduct.charAt(0).toUpperCase() + newProduct.slice(1).toLowerCase()
-                      setFormData({ ...formData, product_type: capitalizedNewProduct })
-                      setProductSearchQuery(capitalizedNewProduct)
-                      setShowProductDropdown(false)
-                    }} className="w-full text-left px-4 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">
-                      + Add "{productSearchQuery.trim()}" as new product
-                    </button>
+                  {productSearchQuery.trim() && productStocks.filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase())).length === 0 && (
+                    <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                      No products found in stock
+                    </div>
                   )}
                 </div>
               )}
@@ -433,7 +437,7 @@ export default function AddSalePage() {
                 onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                 className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
               />
-              {formData.product_type && !isNewProduct && (
+              {formData.product_type && (
                 <div className="flex justify-between items-center mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-md border">
                   <span>In Stock: <span className="font-bold text-gray-800">{availableStock}</span></span>
                   {quantity > 0 && (
@@ -479,18 +483,44 @@ export default function AddSalePage() {
             </div>
           )}
 
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-2">Amount Received Now (₹)</label>
             <input
               type="number"
               min="0"
-              max={totalDue}
+              max={totalDue > 0 ? totalDue : 0}
               step="0.01"
+              placeholder="0.00"
               value={formData.paid_amount}
-              onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value) || 0
+                if (totalDue > 0 && val > totalDue) {
+                  setFormData({ ...formData, paid_amount: totalDue.toString() })
+                } else if (totalDue <= 0 && val > 0) {
+                  setFormData({ ...formData, paid_amount: '' })
+                } else {
+                  setFormData({ ...formData, paid_amount: e.target.value })
+                }
+              }}
               className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Payment Mode</label>
+            <select
+              value={formData.payment_mode}
+              onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
+              className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none bg-white"
+              disabled={!formData.paid_amount || parseFloat(formData.paid_amount) <= 0}
+            >
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+        </div>
 
           {/* New Balance Preview */}
           {(totalAmount > 0 || oldBalance > 0) && (

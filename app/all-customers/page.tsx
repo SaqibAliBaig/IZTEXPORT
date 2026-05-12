@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { ArrowLeft, Search, Users } from 'lucide-react'
+import { ArrowLeft, Search, Users, Filter } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Customer {
@@ -18,6 +18,8 @@ export default function AllCustomers() {
   const router = useRouter()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [sortOrder, setSortOrder] = useState<'recent' | 'asc' | 'desc'>('recent')
+  const [showOnlyDues, setShowOnlyDues] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -54,30 +56,81 @@ export default function AllCustomers() {
 
   const filteredAndSortedCustomers = customers
     .filter(customer => customer.name.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter(customer => showOnlyDues ? Number(customer.current_balance) !== 0 : true)
+    .sort((a, b) => {
+      if (sortOrder === 'asc') {
+        return a.name.localeCompare(b.name)
+      }
+      if (sortOrder === 'desc') {
+        return b.name.localeCompare(a.name)
+      }
+      // 'recent'
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">All Customers</h1>
-            <p className="text-gray-500">Manage your customer statements and balances</p>
+      <div className="flex flex-col gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">All Customers</h1>
+              <p className="text-gray-500">Manage your customer statements and balances</p>
+            </div>
+          </div>
+          
+          <div className="relative w-full md:w-96">
+            <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search customers..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 focus:ring-black outline-none"
+            />
           </div>
         </div>
-        
-        <div className="relative w-full md:w-96">
-          <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search customers..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 focus:ring-black outline-none"
-          />
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-1 bg-white border rounded-lg p-1 shadow-sm w-max overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <button
+              onClick={() => setSortOrder('recent')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                sortOrder === 'recent' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              Recently Added
+            </button>
+            <button
+              onClick={() => setSortOrder('asc')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                sortOrder === 'asc' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              A-Z
+            </button>
+            <button
+              onClick={() => setSortOrder('desc')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                sortOrder === 'desc' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              Z-A
+            </button>
+          </div>
+          
+          <button
+            onClick={() => setShowOnlyDues(!showOnlyDues)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border flex items-center gap-2 ${
+              showOnlyDues ? 'bg-black text-white border-black' : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            {showOnlyDues ? 'Showing Dues' : 'Show Dues Only'}
+          </button>
         </div>
       </div>
 

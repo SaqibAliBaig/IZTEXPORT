@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
-import { ArrowLeft, FileText } from 'lucide-react'
+import Link from 'next/link' 
+import { ArrowLeft, FileText, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
+import toast from 'react-hot-toast'
 
 interface Statement {
   id: string
   name: string
   current_balance: number
   created_at: string
+  note?: string
 }
 
 export default function CustomerStatements() {
@@ -34,7 +36,7 @@ export default function CustomerStatements() {
     setIsLoading(true)
     const { data, error } = await supabase
       .from('parties')
-      .select('id, name, current_balance, created_at')
+      .select('id, name, current_balance, created_at, note')
       .eq('party_type', 'customer')
       .eq('name', customerName)
       .order('created_at', { ascending: false })
@@ -44,6 +46,62 @@ export default function CustomerStatements() {
     }
     setIsLoading(false)
   }
+
+  const handleDeleteStatement = (partyId: string, e: React.MouseEvent) => {
+    // Prevent the click from bubbling up to the Link surrounding the panel
+    e.preventDefault();
+    e.stopPropagation();
+
+    const statementToDel = statements.find(s => s.id === partyId);
+    if (statementToDel && statementToDel.current_balance !== 0) {
+      toast.error('Cannot delete a statement with a non-zero closing balance.');
+      return;
+    }
+
+    toast((t) => (
+      <div>
+        <p className="mb-2 font-semibold text-gray-800">Are you sure?</p>
+        <p className="text-sm text-gray-600 mb-4">
+          This will delete the statement and all associated sales, payments, and ledger entries. This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              const deletionToast = toast.loading('Deleting statement...');
+              try {
+                // 1. Delete all payments related to this statement
+                const { error: err1 } = await supabase.from('payments').delete().eq('party_id', partyId);
+                if (err1) throw err1;
+                // 2. Delete all ledger entries related to this statement
+                const { error: err2 } = await supabase.from('ledger_entries').delete().eq('party_id', partyId);
+                if (err2) throw err2;
+                // 3. Delete all sales related to this customer statement
+                const { error: err3 } = await supabase.from('sales').delete().eq('customer_id', partyId);
+                if (err3) throw err3;
+                // 4. Finally, delete the statement (party record) itself
+                const { error } = await supabase.from('parties').delete().eq('id', partyId);
+                if (error) throw error;
+                toast.success('Statement deleted successfully', { id: deletionToast });
+                setStatements(prev => prev.filter(s => s.id !== partyId));
+              } catch (error: any) {
+                toast.error('Failed to delete statement: ' + error.message, { id: deletionToast });
+              }
+            }}
+            className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
+  };
 
   const sortedStatements = [...statements].sort((a, b) => {
     if (sortOrder === 'desc') {
@@ -98,10 +156,19 @@ export default function CustomerStatements() {
             <Link 
               href={`/statements/${stmt.id}`} 
               key={stmt.id}
-              className="bg-white rounded-xl shadow-sm border p-5 hover:shadow-md transition-all hover:border-blue-300 flex flex-col"
+              className="relative group bg-white rounded-xl shadow-sm border p-5 hover:shadow-md transition-all hover:border-blue-300 flex flex-col hover:z-[9999]"
             >
+              <div
+                role="button"
+                onClick={(e) => handleDeleteStatement(stmt.id, e)}
+                className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors z-10 opacity-0 group-hover:opacity-100 cursor-pointer"
+                title="Delete Statement Completely"
+              >
+                <X className="w-5 h-5" />
+              </div>
+
               <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pr-8">
                   <FileText className="w-5 h-5 text-gray-400" />
                   <h3 className="text-lg font-bold text-gray-900">Statement #{sortOrder === 'desc' ? statements.length - index : index + 1}</h3>
                 </div>
@@ -118,11 +185,28 @@ export default function CustomerStatements() {
                 <p className="text-sm text-gray-500">
                   <span className="font-medium text-gray-500">Created:</span> {new Date(stmt.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
+                {stmt.note && stmt.note.trim() && (
+                  <div className="mt-2 flex items-start gap-1.5 text-sm text-gray-600 bg-gray-50 p-2 rounded-md border border-gray-100">
+                    <FileText className="w-4 h-4 flex-shrink-0 mt-0.5 text-gray-400" />
+                    <p className="truncate" title="Hover card to view full note">
+                      {stmt.note.trim().split('\n')[0]}
+                    </p>
+                  </div>
+                )}
               </div>
               
               <div className="mt-4 pt-4 border-t border-gray-100 text-sm text-blue-600 font-medium text-center hover:underline">
                 View Statement Details
               </div>
+
+              {/* Tooltip for Note */}
+              {stmt.note && stmt.note.trim() && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-max max-w-[calc(100vw-2rem)] md:max-w-xs p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-[9999] whitespace-pre-wrap cursor-default pointer-events-none">
+                  <span className="font-semibold text-gray-300">Note:</span> {stmt.note.trim()}
+                  {/* Tooltip upward arrow */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900"></div>
+                </div>
+              )}
             </Link>
           ))}
         </div>

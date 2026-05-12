@@ -22,6 +22,7 @@ export default function AddPurchasePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [colorPreview, setColorPreview] = useState<string | null>(null)
+  const [openingBalance, setOpeningBalance] = useState('')
   const [formData, setFormData] = useState({
     supplier_id: '',
     cloth_name: '',
@@ -29,7 +30,8 @@ export default function AddPurchasePage() {
     color_image_url: '',
     meters: '',
     rate_per_meter: '',
-    paid_amount: '0',
+    paid_amount: '',
+    payment_mode: 'cash',
     purchase_date: new Date().toISOString().split('T')[0],
     note: ''
   })
@@ -106,13 +108,19 @@ export default function AddPurchasePage() {
   const meters = parseFloat(formData.meters) || 0
   const rate = parseFloat(formData.rate_per_meter) || 0
   const totalAmount = meters * rate
-  const dueAmount = totalAmount - (parseFloat(formData.paid_amount) || 0)
+  const oldBalance = parseFloat(openingBalance) || 0
+  const totalDue = oldBalance + totalAmount
+  const newBalance = totalDue - (parseFloat(formData.paid_amount) || 0)
+
+  const formatBalance = (amount: number) => {
+    if (amount === 0) return '₹0'
+    return amount < 0 ? `-₹${Math.abs(amount).toLocaleString('en-IN')}` : `₹${amount.toLocaleString('en-IN')}`
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     let supplierName = ''
-    let openingBalance = 0
 
     if (isNewSupplier) {
       if (!newSupplierName.trim()) {
@@ -127,10 +135,16 @@ export default function AddPurchasePage() {
       }
       const supplier = suppliers.find(s => s.id === formData.supplier_id)
       supplierName = supplier?.name || ''
-      openingBalance = supplier?.current_balance || 0
     }
 
-    const finalCurrentBalance = openingBalance + dueAmount
+    const paidNow = parseFloat(formData.paid_amount) || 0
+    if (totalDue > 0 && paidNow > totalDue) {
+      toast.error(`Paid amount cannot exceed total due (₹${totalDue.toLocaleString('en-IN')})`)
+      return
+    } else if (totalDue <= 0 && paidNow > 0) {
+      toast.error('Cannot make a payment when there is no due')
+      return
+    }
 
     // Always create a new statement row for the transaction
     const { data: newParty, error: partyError } = await supabase
@@ -138,8 +152,9 @@ export default function AddPurchasePage() {
       .insert({
         name: supplierName,
         party_type: 'supplier',
-        current_balance: finalCurrentBalance,
-        opening_balance: openingBalance
+        current_balance: newBalance,
+        opening_balance: oldBalance,
+        note: formData.note || null
       })
       .select()
       .single()
@@ -153,22 +168,35 @@ export default function AddPurchasePage() {
 
     // Zero out older statements for this supplier so the sum remains correct
     // This ensures only the newest statement holds the grand total
-    if (!isNewSupplier) {
+    if (!isNewSupplier && oldBalance !== 0) {
       const { data: existing } = await supabase
         .from('parties')
-        .select('id, name')
+        .select('id, name, current_balance')
         .eq('party_type', 'supplier')
+        .neq('current_balance', 0)
+        .neq('id', finalSupplierId)
 
       if (existing) {
-        const idsToZero = existing
-          .filter(p => p.name.toLowerCase().trim() === supplierName.toLowerCase().trim() && p.id !== finalSupplierId)
-          .map(p => p.id)
+        const statementsToZero = existing.filter(
+          p => p.name.toLowerCase().trim() === supplierName.toLowerCase().trim()
+        )
 
-        if (idsToZero.length > 0) {
+        for (const stmt of statementsToZero) {
           await supabase
             .from('parties')
             .update({ current_balance: 0 })
-            .in('id', idsToZero)
+            .eq('id', stmt.id)
+
+          await supabase
+            .from('ledger_entries')
+            .insert({
+              party_id: stmt.id,
+              entry_type: stmt.current_balance > 0 ? 'debit' : 'credit',
+              amount: Math.abs(stmt.current_balance),
+              related_type: 'adjustment',
+              entry_date: formData.purchase_date,
+              note: 'Old due carried to new statement'
+            })
         }
       }
     }
@@ -236,7 +264,7 @@ export default function AddPurchasePage() {
           related_id: purchase.id,
           amount: parseFloat(formData.paid_amount),
           payment_date: formData.purchase_date,
-          payment_mode: 'cash',
+          payment_mode: formData.payment_mode,
           note: `Payment for cloth purchase: ${formData.meters}m ${formData.cloth_name}`
         })
         .select()
@@ -289,7 +317,10 @@ export default function AddPurchasePage() {
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
                     setShowDropdown(true)
-                    if (formData.supplier_id) setFormData({ ...formData, supplier_id: '' })
+                    if (formData.supplier_id) {
+                      setFormData({ ...formData, supplier_id: '' })
+                      setOpeningBalance('')
+                    }
                     if (isNewSupplier) setIsNewSupplier(false)
                   }}
                   onFocus={() => setShowDropdown(true)}
@@ -320,6 +351,7 @@ export default function AddPurchasePage() {
                       onClick={() => {
                         setFormData({ ...formData, supplier_id: supplier.id })
                         setSearchQuery(supplier.name)
+                        setOpeningBalance(supplier.current_balance.toString())
                         setIsNewSupplier(false)
                         setShowDropdown(false)
                       }}
@@ -335,6 +367,7 @@ export default function AddPurchasePage() {
                       setIsNewSupplier(true)
                       setNewSupplierName(searchQuery.trim())
                       setFormData({ ...formData, supplier_id: 'new' })
+                      setOpeningBalance('')
                       setShowDropdown(false)
                     }}
                     className="w-full text-left px-4 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium"
@@ -345,6 +378,35 @@ export default function AddPurchasePage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Opening Balance */}
+        <div className="bg-white rounded-xl p-4 border">
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-medium">Previous Due Balance (₹) {!isNewSupplier && formData.supplier_id ? '(Auto-filled)' : '(Optional)'}</label>
+            {parseFloat(openingBalance || '0') !== 0 && (
+              <button
+                type="button"
+                onClick={() => setOpeningBalance('')}
+                className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium"
+              >
+                Start Fresh Statement (Set to 0)
+              </button>
+            )}
+          </div>
+          <input
+            type="number"
+            step="0.01"
+            placeholder="0.00"
+            value={openingBalance}
+            onChange={(e) => setOpeningBalance(e.target.value)}
+            className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {!isNewSupplier && formData.supplier_id 
+              ? 'Current balance from existing statement. You can modify this to 0 to start a fresh statement without carrying over previous dues.' 
+              : 'Set this to carry over any previous dues into this new statement.'}
+          </p>
         </div>
 
         {/* Cloth Details */}
@@ -441,13 +503,27 @@ export default function AddPurchasePage() {
             </div>
           </div>
 
-          {/* Auto-calculated totals */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-gray-600">Total Amount</span>
-              <span className="text-lg font-bold">₹{totalAmount.toLocaleString('en-IN')}</span>
+          {/* Purchase Summary */}
+          {(totalAmount > 0 || oldBalance !== 0) && (
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-600">New Purchase Amount</span>
+                <span className="font-semibold">₹{totalAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Previous Dues</span>
+                <span className={`font-semibold ${oldBalance > 0 ? 'text-red-600' : oldBalance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                  {formatBalance(oldBalance)}
+                </span>
+              </div>
+              <div className="border-t pt-2 flex justify-between">
+                <span className="text-gray-900 font-medium">Total Due</span>
+                <span className="text-lg font-bold">
+                  {formatBalance(totalDue)}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -455,33 +531,46 @@ export default function AddPurchasePage() {
               <input
                 type="number"
                 min="0"
-                max={totalAmount}
+                max={totalDue > 0 ? totalDue : 0}
                 step="0.01"
+                placeholder="0.00"
                 value={formData.paid_amount}
-                onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
-                className="w-full px-3 py-3 border rounded-lg"
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 0
+                  if (totalDue > 0 && val > totalDue) {
+                    setFormData({ ...formData, paid_amount: totalDue.toString() })
+                  } else if (totalDue <= 0 && val > 0) {
+                    setFormData({ ...formData, paid_amount: '' })
+                  } else {
+                    setFormData({ ...formData, paid_amount: e.target.value })
+                  }
+                }}
+                className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Current Bill Due</label>
-              <div className="w-full px-3 py-3 bg-gray-50 border rounded-lg">
-                <span className="text-orange-600 font-medium">₹{dueAmount.toLocaleString('en-IN')}</span>
-              </div>
+              <label className="block text-sm font-medium mb-2">Payment Mode</label>
+              <select
+                value={formData.payment_mode}
+                onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
+                className="w-full px-3 py-3 border rounded-lg bg-white focus:ring-2 focus:ring-black outline-none"
+                disabled={!formData.paid_amount || parseFloat(formData.paid_amount) <= 0}
+              >
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cheque">Cheque</option>
+              </select>
             </div>
           </div>
 
-          {formData.supplier_id && formData.supplier_id !== 'new' && (
-            <div className="bg-orange-50 rounded-lg p-4 mt-2 border border-orange-100">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-orange-800">Previous Owed Balance</span>
-                <span className="font-medium text-orange-800">
-                  ₹{(suppliers.find(s => s.id === formData.supplier_id)?.current_balance || 0).toLocaleString('en-IN')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-t border-orange-200 pt-2">
-                <span className="font-bold text-orange-900">Total Supplier Due</span>
-                <span className="text-lg font-bold text-red-600">
-                  ₹{((suppliers.find(s => s.id === formData.supplier_id)?.current_balance || 0) + dueAmount).toLocaleString('en-IN')}
+          {/* New Balance Preview */}
+          {(totalAmount > 0 || oldBalance !== 0) && (
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <div className="flex justify-between items-center">
+                <span className="text-blue-900 font-medium">Final Statement Balance</span>
+                <span className={`text-lg font-bold ${newBalance > 0 ? 'text-red-600' : newBalance < 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                  {formatBalance(newBalance)}
                 </span>
               </div>
             </div>

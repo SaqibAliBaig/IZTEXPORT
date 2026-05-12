@@ -33,6 +33,7 @@ export default function PaymentsPage() {
   const [dateFilter, setDateFilter] = useState<'all' | 'this_month' | 'last_month'>('all')
   const [balanceFilter, setBalanceFilter] = useState<'all' | 'receivables' | 'payables'>('all')
   const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'received' | 'paid'>('all')
+  const [paymentModeFilter, setPaymentModeFilter] = useState<'all' | 'cash' | 'upi' | 'bank_transfer' | 'cheque'>('all')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [loading, setLoading] = useState(true)
 
@@ -52,7 +53,20 @@ export default function PaymentsPage() {
       .select('id, name, party_type, current_balance')
       .order('name')
 
-    if (partiesData) setParties(partiesData as Party[])
+    if (partiesData) {
+      // Group parties by name and type to merge multiple statements for the same entity
+      const groupedParties = (partiesData as Party[]).reduce((acc, curr) => {
+        const key = `${curr.name.toLowerCase().trim()}-${curr.party_type}`
+        if (!acc[key]) {
+          acc[key] = { ...curr }
+        } else {
+          acc[key].current_balance = Number(acc[key].current_balance) + Number(curr.current_balance)
+        }
+        return acc
+      }, {} as Record<string, Party>)
+      
+      setParties(Object.values(groupedParties).sort((a, b) => a.name.localeCompare(b.name)))
+    }
 
     if (paymentsData && partiesData) {
       const formattedPayments = paymentsData.map(payment => {
@@ -107,7 +121,12 @@ export default function PaymentsPage() {
       matchesType = payment.party_type !== 'customer'
     }
 
-    return matchesSearch && matchesDate && matchesBalance && matchesType
+    let matchesMode = true
+    if (paymentModeFilter !== 'all') {
+      matchesMode = payment.payment_mode === paymentModeFilter
+    }
+
+    return matchesSearch && matchesDate && matchesBalance && matchesType && matchesMode
   }).sort((a, b) => {
     const dateA = new Date(a.payment_date).getTime()
     const dateB = new Date(b.payment_date).getTime()
@@ -133,7 +152,10 @@ export default function PaymentsPage() {
 
   const breakdownParties = parties.filter(p => {
     const bal = Number(p.current_balance) || 0
-    if (bal === 0) return false
+
+    if (searchTerm && !p.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false
+    }
 
     if (balanceFilter === 'all') return true
     if (balanceFilter === 'receivables') {
@@ -147,7 +169,7 @@ export default function PaymentsPage() {
 
   const getBreakdownTotal = (type: string) => {
     if (balanceFilter === 'all') {
-      return parties.filter(p => p.party_type === type).reduce((sum, p) => sum + Number(p.current_balance), 0)
+      return breakdownParties.filter(p => p.party_type === type).reduce((sum, p) => sum + Number(p.current_balance), 0)
     }
     return breakdownParties.filter(p => p.party_type === type).reduce((sum, p) => sum + Math.abs(Number(p.current_balance)), 0)
   }
@@ -228,10 +250,10 @@ export default function PaymentsPage() {
                 )}
                 {breakdownParties.filter(p => p.party_type === 'customer').map(p => (
                   <div key={p.id} className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0 gap-2">
-                    <Link href={`/statements/${p.id}`} className="text-xs sm:text-sm text-gray-700 hover:text-blue-600 hover:underline truncate pr-2">
+                    <Link href={`/all-customers/${encodeURIComponent(p.name)}`} className="text-xs sm:text-sm text-gray-700 hover:text-blue-600 hover:underline truncate pr-2">
                       {p.name}
                     </Link>
-                    <span className={`text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${Number(p.current_balance) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className={`text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${Number(p.current_balance) > 0 ? 'text-green-600' : Number(p.current_balance) < 0 ? 'text-red-600' : 'text-gray-500'}`}>
                       ₹{Math.abs(Number(p.current_balance)).toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -259,7 +281,7 @@ export default function PaymentsPage() {
                     <Link href={`/statements/${p.id}`} className="text-xs sm:text-sm text-gray-700 hover:text-blue-600 hover:underline truncate pr-2">
                       {p.name}
                     </Link>
-                    <span className={`text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${Number(p.current_balance) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    <span className={`text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${Number(p.current_balance) > 0 ? 'text-red-600' : Number(p.current_balance) < 0 ? 'text-green-600' : 'text-gray-500'}`}>
                       ₹{Math.abs(Number(p.current_balance)).toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -287,7 +309,7 @@ export default function PaymentsPage() {
                     <Link href={`/statements/${p.id}`} className="text-xs sm:text-sm text-gray-700 hover:text-blue-600 hover:underline truncate pr-2">
                       {p.name}
                     </Link>
-                    <span className={`text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${Number(p.current_balance) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    <span className={`text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${Number(p.current_balance) > 0 ? 'text-red-600' : Number(p.current_balance) < 0 ? 'text-green-600' : 'text-gray-500'}`}>
                       ₹{Math.abs(Number(p.current_balance)).toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -357,6 +379,39 @@ export default function PaymentsPage() {
 
           <div className="flex bg-white rounded-xl border p-1 overflow-x-auto w-full sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <button
+              onClick={() => setPaymentModeFilter('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentModeFilter === 'all' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              All Modes
+            </button>
+            <button
+              onClick={() => setPaymentModeFilter('cash')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentModeFilter === 'cash' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Cash
+            </button>
+            <button
+              onClick={() => setPaymentModeFilter('upi')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentModeFilter === 'upi' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              UPI
+            </button>
+            <button
+              onClick={() => setPaymentModeFilter('bank_transfer')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentModeFilter === 'bank_transfer' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Bank Transfer
+            </button>
+            <button
+              onClick={() => setPaymentModeFilter('cheque')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${paymentModeFilter === 'cheque' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Cheque
+            </button>
+          </div>
+
+          <div className="flex bg-white rounded-xl border p-1 overflow-x-auto w-full sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <button
               onClick={() => setSortOrder('desc')}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${sortOrder === 'desc' ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}`}
             >
@@ -405,9 +460,11 @@ export default function PaymentsPage() {
                       {payment.party_type}
                     </span>
                   </div>
-                  <p className="text-xs sm:text-sm text-gray-600 capitalize truncate">
-                    Mode: {payment.payment_mode.replace('_', ' ')}
-                  </p>
+                  {payment.payment_mode && (
+                    <p className="text-xs sm:text-sm text-gray-600 capitalize truncate mt-0.5">
+                      Mode: {payment.payment_mode.replace('_', ' ')}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="text-right flex-shrink-0 ml-2">

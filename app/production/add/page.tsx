@@ -49,6 +49,7 @@ export default function AddProductionPage() {
   const [clothStocks, setClothStocks] = useState<ClothStock[]>([])
   const [selectedStock, setSelectedStock] = useState<ClothStock | null>(null)
   const [metersToIssue, setMetersToIssue] = useState('')
+  const [openingBalance, setOpeningBalance] = useState('')
   const [formData, setFormData] = useState({
     factory_name: '',
     cloth_issue_id: '',
@@ -56,7 +57,8 @@ export default function AddProductionPage() {
     output_quantity: '',
     output_unit: 'pieces',
     rate_per_unit: '',
-    paid_amount: '0',
+    paid_amount: '',
+    payment_mode: 'cash',
     production_date: new Date().toISOString().split('T')[0],
     note: ''
   })
@@ -92,6 +94,10 @@ export default function AddProductionPage() {
         if (fId) {
           const factory = data.find(f => f.id === fId)
           if (factory) {
+            const groupedFactory = Object.values(grouped).find((f: any) => f.name === factory.name)
+            if (groupedFactory) {
+              setOpeningBalance((groupedFactory as Factory).current_balance.toString())
+            }
             setSearchQuery(factory.name)
             fetchFactoryIssues(factory.name, iId)
           }
@@ -232,7 +238,15 @@ export default function AddProductionPage() {
   const quantity = parseInt(formData.output_quantity) || 0
   const rate = parseFloat(formData.rate_per_unit) || 0
   const totalValue = quantity * rate
-  const dueAmount = totalValue - (parseFloat(formData.paid_amount) || 0)
+  const oldBalance = parseFloat(openingBalance) || 0
+  const totalDue = oldBalance + totalValue
+  const paidNow = parseFloat(formData.paid_amount) || 0
+  const newBalance = totalDue - paidNow
+
+  const formatBalance = (amount: number) => {
+    if (amount === 0) return '₹0'
+    return amount < 0 ? `-₹${Math.abs(amount).toLocaleString('en-IN')}` : `₹${amount.toLocaleString('en-IN')}`
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -249,10 +263,17 @@ export default function AddProductionPage() {
 
     setIsSubmitting(true)
 
+    if (totalDue > 0 && paidNow > totalDue) {
+      toast.error(`Paid amount cannot exceed total due (₹${totalDue.toLocaleString('en-IN')})`)
+      setIsSubmitting(false)
+      return
+    } else if (totalDue <= 0 && paidNow > 0) {
+      toast.error('Cannot make a payment when there is no due')
+      setIsSubmitting(false)
+      return
+    }
+
     const factoryName = selectedFactory
-    const factorySummary = factories.find(f => f.name.toLowerCase() === factoryName.toLowerCase())
-    const oldBalance = factorySummary?.current_balance || 0
-    const newBalance = oldBalance + dueAmount
 
     // 1. Create a NEW statement (party record) for this Factory
     const { data: newParty, error: partyError } = await supabase
@@ -261,7 +282,8 @@ export default function AddProductionPage() {
         name: factoryName.trim(),
         party_type: 'factory',
         current_balance: newBalance,
-        opening_balance: oldBalance
+        opening_balance: oldBalance,
+        note: formData.note || null
       })
       .select()
       .single()
@@ -293,7 +315,7 @@ export default function AddProductionPage() {
             amount: Math.abs(stmt.current_balance),
             related_type: 'adjustment',
             entry_date: formData.production_date,
-            note: 'Balance carried forward to new statement'
+            note: 'Old due carried to new statement'
           })
         }
       }
@@ -303,8 +325,13 @@ export default function AddProductionPage() {
 
     if (selectedStock) {
       const issueMeters = parseFloat(metersToIssue)
-      if (isNaN(issueMeters) || issueMeters <= 0 || issueMeters > selectedStock.meters_remaining) {
+      if (isNaN(issueMeters) || issueMeters <= 0) {
          toast.error('Please enter a valid number of meters to issue.')
+         setIsSubmitting(false)
+         return
+      }
+      if (issueMeters > selectedStock.meters_remaining) {
+         toast.error(`Cannot issue more than available stock (${selectedStock.meters_remaining}m).`)
          setIsSubmitting(false)
          return
       }
@@ -387,7 +414,7 @@ export default function AddProductionPage() {
           related_id: production.id,
           amount: parseFloat(formData.paid_amount),
           payment_date: formData.production_date,
-          payment_mode: 'cash',
+          payment_mode: formData.payment_mode,
           note: `Payment for production: ${formData.product_type}`
         })
         .select()
@@ -440,7 +467,10 @@ export default function AddProductionPage() {
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
                     setShowDropdown(true)
-                    if (formData.factory_name) setFormData({ ...formData, factory_name: '' })
+                    if (formData.factory_name) {
+                      setFormData({ ...formData, factory_name: '' })
+                      setOpeningBalance('')
+                    }
                   }}
                   onFocus={() => setShowDropdown(true)}
                   onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
@@ -465,17 +495,48 @@ export default function AddProductionPage() {
                       onClick={() => {
                         fetchFactoryIssues(factory.name)
                         setSearchQuery(factory.name)
+                        setOpeningBalance(factory.current_balance.toString())
                         setShowDropdown(false)
                       }}
                       className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0"
                     >
-                      {factory.name}
+                      <div className="font-medium">{factory.name}</div>
+                      <div className="text-sm text-gray-500">Balance: ₹{factory.current_balance}</div>
                     </button>
                   ))}
               </div>
             )}
           </div>
         </div>
+
+        {/* Opening Balance */}
+        {selectedFactory && (
+          <div className="bg-white rounded-xl p-4 border">
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium">Previous Due Balance (₹) {formData.factory_name ? '(Auto-filled)' : '(Optional)'}</label>
+              {parseFloat(openingBalance || '0') !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOpeningBalance('')}
+                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                >
+                  Start Fresh Statement (Set to 0)
+                </button>
+              )}
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={openingBalance}
+              onChange={(e) => setOpeningBalance(e.target.value)}
+              className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Current balance from existing statement. You can modify this to 0 to start a fresh statement without carrying over previous dues.
+            </p>
+          </div>
+        )}
 
         {/* Select Cloth Issue */}
         {selectedFactory && (
@@ -577,7 +638,14 @@ export default function AddProductionPage() {
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-blue-900">Meters to Issue for this Production *</label>
-              <input type="number" required min="0.01" max={selectedStock.meters_remaining} step="0.01" placeholder="Enter meters used" value={metersToIssue} onChange={(e) => setMetersToIssue(e.target.value)} className="w-full px-3 py-3 border rounded-lg border-blue-200 focus:ring-blue-500" />
+              <input type="number" required min="0.01" max={selectedStock.meters_remaining} step="0.01" placeholder="Enter meters used" value={metersToIssue} onChange={(e) => {
+                const val = parseFloat(e.target.value) || 0
+                if (val > selectedStock.meters_remaining) {
+                  setMetersToIssue(selectedStock.meters_remaining.toString())
+                } else {
+                  setMetersToIssue(e.target.value)
+                }
+              }} className="w-full px-3 py-3 border rounded-lg border-blue-200 focus:ring-blue-500" />
               <p className="text-xs text-blue-600 mt-1">
                 This will automatically issue the cloth from raw stock to {formData.factory_name} and record the production.
               </p>
@@ -643,32 +711,72 @@ export default function AddProductionPage() {
             </div>
 
             {/* Auto-calculated totals */}
-            {totalValue > 0 && (
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Total Production Value</span>
-                  <span className="text-lg font-bold">₹{totalValue.toLocaleString('en-IN')}</span>
+            {(totalValue > 0 || oldBalance !== 0) && (
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">New Production Value</span>
+                  <span className="font-semibold">₹{totalValue.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Previous Dues</span>
+                  <span className={`font-semibold ${oldBalance > 0 ? 'text-red-600' : oldBalance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                    {formatBalance(oldBalance)}
+                  </span>
+                </div>
+                <div className="border-t pt-2 flex justify-between">
+                  <span className="text-gray-900 font-medium">Total Due</span>
+                  <span className="text-lg font-bold">
+                    {formatBalance(totalDue)}
+                  </span>
                 </div>
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
-              <input
-                type="number"
-                min="0"
-                max={totalValue}
-                step="0.01"
-                value={formData.paid_amount}
-                onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
-                className="w-full px-3 py-3 border rounded-lg"
-              />
-              {totalValue > 0 && (
-                <p className="text-sm text-orange-600 mt-1">
-                  Due after payment: ₹{dueAmount.toLocaleString('en-IN')}
-                </p>
-              )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max={totalDue > 0 ? totalDue : 0}
+                  step="0.01"
+                  placeholder="0.00"
+                  value={formData.paid_amount}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0
+                    if (totalDue > 0 && val > totalDue) {
+                      setFormData({ ...formData, paid_amount: totalDue.toString() })
+                    } else if (totalDue <= 0 && val > 0) {
+                      setFormData({ ...formData, paid_amount: '' })
+                    } else {
+                      setFormData({ ...formData, paid_amount: e.target.value })
+                    }
+                  }}
+                  className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment Mode</label>
+                <select value={formData.payment_mode} onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })} className="w-full px-3 py-3 border rounded-lg bg-white" disabled={!formData.paid_amount || parseFloat(formData.paid_amount) <= 0}>
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
             </div>
+
+            {/* New Balance Preview */}
+            {(totalValue > 0 || oldBalance !== 0) && (
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-blue-900 font-medium">Final Statement Balance</span>
+                  <span className={`text-lg font-bold ${newBalance > 0 ? 'text-red-600' : newBalance < 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                    {formatBalance(newBalance)}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium mb-2">Production Date *</label>
@@ -696,7 +804,7 @@ export default function AddProductionPage() {
 
         <button
           type="submit"
-          disabled={!selectedIssue || isSubmitting}
+          disabled={(!selectedIssue && !selectedStock) || isSubmitting}
           className="w-full bg-black text-white py-4 rounded-xl text-lg font-medium hover:bg-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
           {isSubmitting ? 'Adding...' : 'Add Garments to Stock'}

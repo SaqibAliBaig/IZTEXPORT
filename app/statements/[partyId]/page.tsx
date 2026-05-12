@@ -17,6 +17,7 @@ interface Party {
   opening_balance: number
   current_balance: number
   created_at: string
+  note?: string | null
 }
 
 interface LedgerEntry {
@@ -28,6 +29,7 @@ interface LedgerEntry {
   related_type: string
   related_id?: string
   created_at: string
+  payment_mode?: string
 }
 interface ClothIssue {
   id: string
@@ -54,6 +56,22 @@ interface ClothStock {
   purchase: { color_image_url: string }
 }
 
+const formatSafeDate = (dateString: string) => {
+  if (!dateString) return '-';
+  try {
+    const dateStr = dateString.split('T')[0];
+    const [year, month, day] = dateStr.split('-');
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    return date.toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  } catch (e) {
+    return dateString;
+  }
+};
+
 export default function PartyStatementPage() {
   const router = useRouter()
   const params = useParams()
@@ -63,11 +81,17 @@ export default function PartyStatementPage() {
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
   
+  const getTodayLocal = () => {
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+  };
+
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
   const [updateType, setUpdateType] = useState<'receive' | 'give'>('receive')
   const [updateAmount, setUpdateAmount] = useState('')
   const [updateNote, setUpdateNote] = useState('')
-  const [updateDate, setUpdateDate] = useState(new Date().toISOString().split('T')[0])
+  const [updatePaymentMode, setUpdatePaymentMode] = useState('cash')
+  const [updateDate, setUpdateDate] = useState(getTodayLocal())
   const [isUpdating, setIsUpdating] = useState(false)
 
   const [isAddProductionModalOpen, setIsAddProductionModalOpen] = useState(false)
@@ -83,8 +107,9 @@ export default function PartyStatementPage() {
     output_quantity: '',
     output_unit: 'pieces',
     rate_per_unit: '',
-    paid_amount: '0',
-    production_date: new Date().toISOString().split('T')[0],
+    paid_amount: '',
+    payment_mode: 'cash',
+    production_date: getTodayLocal(),
     note: ''
   })
 
@@ -92,15 +117,15 @@ export default function PartyStatementPage() {
   const [productStocks, setProductStocks] = useState<{ product_type: string, quantity: number }[]>([])
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [showProductDropdown, setShowProductDropdown] = useState(false)
-  const [isNewProduct, setIsNewProduct] = useState(false)
   const [productsLoading, setProductsLoading] = useState(false)
   
   const [saleFormData, setSaleFormData] = useState({
     product_type: '',
     quantity: '',
     rate: '',
-    paid_amount: '0',
-    sale_date: new Date().toISOString().split('T')[0],
+    paid_amount: '',
+    payment_mode: 'cash',
+    sale_date: getTodayLocal(),
     note: ''
   })
 
@@ -117,14 +142,6 @@ export default function PartyStatementPage() {
       fetchStatement()
     }
   }, [partyId])
-
-
-  useEffect(() => {
-    if (saleFormData.product_type) {
-      const isNew = !productStocks.some(p => p.product_type === saleFormData.product_type)
-      setIsNewProduct(isNew)
-    }
-  }, [saleFormData.product_type, productStocks])
 
   const fetchStatement = async () => {
     setLoading(true)
@@ -152,6 +169,14 @@ export default function PartyStatementPage() {
       .order('entry_date', { ascending: true })
       .order('created_at', { ascending: true })
 
+    // Fetch payments to attach payment modes to ledger entries
+    const { data: paymentsData } = await supabase
+      .from('payments')
+      .select('id, payment_mode')
+      .eq('party_id', partyId)
+
+    const paymentModesMap = new Map(paymentsData?.map(p => [p.id, p.payment_mode]) || [])
+
     if (ledgerData) {
       // Filter out duplicate opening balance ledger entry if it was created by the add-balance bug
       const cleanedData = ledgerData.filter((entry, index) => {
@@ -164,8 +189,13 @@ export default function PartyStatementPage() {
            if (timeDiff < 5000) return false;
         }
         return true;
+      }).map(entry => {
+        return {
+          ...entry,
+          payment_mode: entry.related_type === 'payment' && entry.related_id ? paymentModesMap.get(entry.related_id) : undefined
+        };
       });
-      setEntries(cleanedData)
+      setEntries(cleanedData as LedgerEntry[])
     }
     
     setLoading(false)
@@ -206,7 +236,9 @@ export default function PartyStatementPage() {
     const pStocks = Array.from(productMap.entries()).map(([product_type, { produced, sold }]) => ({
       product_type,
       quantity: Math.max(0, produced - sold)
-    })).sort((a, b) => a.product_type.localeCompare(b.product_type));
+    }))
+    .filter(p => p.quantity > 0)
+    .sort((a, b) => a.product_type.localeCompare(b.product_type));
 
     setProductStocks(pStocks)
     setProductsLoading(false)
@@ -229,8 +261,9 @@ export default function PartyStatementPage() {
       output_quantity: '',
       output_unit: 'pieces',
       rate_per_unit: '',
-      paid_amount: '0',
-      production_date: new Date().toISOString().split('T')[0],
+      paid_amount: '',
+      payment_mode: 'cash',
+      production_date: getTodayLocal(),
       note: ''
     })
     setClothIssues([]) // Clear previous issues
@@ -378,6 +411,15 @@ export default function PartyStatementPage() {
       return
     }
 
+    const totalValue = quantity * rate
+    if (totalValue > 0 && paidNow > totalValue) {
+      toast.error(`Paid amount cannot exceed total value (₹${totalValue.toLocaleString('en-IN')})`)
+      return
+    } else if (totalValue <= 0 && paidNow > 0) {
+      toast.error('Cannot make a payment when there is no production value')
+      return
+    }
+
     let currentIssueId = selectedIssue?.id
 
     if (selectedStock) {
@@ -420,7 +462,6 @@ export default function PartyStatementPage() {
       setIsUpdating(true)
     }
 
-    const totalValue = quantity * rate
     const dueAmount = totalValue - paidNow
 
     try {
@@ -440,22 +481,26 @@ export default function PartyStatementPage() {
       const { data: production, error: prodError } = await supabase.from('production_records').insert(productionData).select().single()
       if (prodError) throw prodError
 
-      await supabase.from('ledger_entries').insert({
+      const { error: prodLedgerError } = await supabase.from('ledger_entries').insert({
         party_id: party.id, entry_type: 'credit', amount: totalValue, related_type: 'production',
         related_id: production.id, entry_date: productionFormData.production_date, note: `Production: ${quantity} ${productionFormData.product_type} x ₹${rate}/${productionFormData.output_unit === 'pieces' ? 'piece' : productionFormData.output_unit.replace(/s$/, '')}`
       })
+      if (prodLedgerError) throw prodLedgerError
 
       if (paidNow > 0) {
         const { data: payment, error: payError } = await supabase.from('payments').insert({
           party_id: party.id, related_type: 'production', related_id: production.id, amount: paidNow,
-          payment_date: productionFormData.production_date, payment_mode: 'cash', note: `Payment for production: ${productionFormData.product_type}`
+          payment_date: productionFormData.production_date, payment_mode: productionFormData.payment_mode, note: `Payment for production: ${productionFormData.product_type}`
         }).select().single()
+        
+        if (payError) throw payError
 
         if (!payError && payment) {
-          await supabase.from('ledger_entries').insert({
+          const { error: ledgerError } = await supabase.from('ledger_entries').insert({
             party_id: party.id, entry_type: 'debit', amount: paidNow, related_type: 'payment',
             related_id: payment.id, entry_date: productionFormData.production_date, note: `Payment for production: ${productionFormData.product_type}`
           })
+          if (ledgerError) throw ledgerError
         }
       }
 
@@ -464,7 +509,7 @@ export default function PartyStatementPage() {
         
       toast.success('Production added successfully')
       setIsAddProductionModalOpen(false)
-      setProductionFormData({ cloth_issue_id: '', product_type: '', output_quantity: '', output_unit: 'pieces', rate_per_unit: '', paid_amount: '0', production_date: new Date().toISOString().split('T')[0], note: '' })
+      setProductionFormData({ cloth_issue_id: '', product_type: '', output_quantity: '', output_unit: 'pieces', rate_per_unit: '', paid_amount: '', payment_mode: 'cash', production_date: getTodayLocal(), note: '' })
       setSelectedIssue(null)
       fetchStatement()
     } catch (error: any) {
@@ -487,14 +532,24 @@ export default function PartyStatementPage() {
     }
 
     const availableStock = productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity || 0
-    if (!isNewProduct && quantity > availableStock) {
+    if (quantity > availableStock) {
       toast.error(`Cannot sell more than available stock (${availableStock})`)
       return;
     }
 
     setIsUpdating(true)
     const totalAmount = quantity * rate
-    
+
+    // For customers, balance is positive if they owe us.
+    const balanceAfterSale = party.current_balance + totalAmount;
+    const maxPayable = balanceAfterSale > 0 ? balanceAfterSale : 0;
+
+    if (paidNow > maxPayable) {
+      toast.error(`Paid amount cannot exceed total due (₹${maxPayable.toLocaleString('en-IN')})`)
+      setIsUpdating(false)
+      return
+    }
+
     try {
       const saleData = {
         customer_id: party.id,
@@ -502,7 +557,7 @@ export default function PartyStatementPage() {
         quantity: quantity,
         rate: rate,
         total_amount: totalAmount,
-        old_balance: party.current_balance, // previous balance
+        old_balance: party.current_balance,
         paid_amount: paidNow,
         sale_date: saleFormData.sale_date,
         note: saleFormData.note
@@ -532,8 +587,9 @@ export default function PartyStatementPage() {
         .select()
         .single()
 
-      let newBalance = party.current_balance + totalAmount
+      if (debitError) throw debitError
 
+      let newBalance = party.current_balance + totalAmount
       const newEntries = debitEntry ? [debitEntry] : []
 
       // If payment made, record it
@@ -546,15 +602,17 @@ export default function PartyStatementPage() {
             related_id: sale.id,
             amount: paidNow,
             payment_date: saleFormData.sale_date,
-            payment_mode: 'cash',
-            note: `Payment for sale: ${saleFormData.product_type}`
+            payment_mode: saleFormData.payment_mode,
+            note: `Payment received for sale: ${saleFormData.product_type}`
           })
           .select()
           .single()
 
-        if (!payError && payment) {
+        if (payError) throw payError
+
+        if (payment) {
           // Add payment ledger entry
-          const { data: creditEntry } = await supabase
+          const { data: creditEntry, error: creditError } = await supabase
             .from('ledger_entries')
             .insert({
               party_id: party.id,
@@ -568,8 +626,10 @@ export default function PartyStatementPage() {
             .select()
             .single()
             
+          if (creditError) throw creditError
+            
           newBalance -= paidNow
-          if (creditEntry) newEntries.push(creditEntry)
+          if (creditEntry) newEntries.push({ ...creditEntry, payment_mode: saleFormData.payment_mode })
         }
       }
 
@@ -581,6 +641,7 @@ export default function PartyStatementPage() {
       if (partyUpdateError) throw partyUpdateError
 
       setParty(prev => prev ? { ...prev, current_balance: newBalance } : null)
+      
       setEntries(prev => {
         const combined = [...prev, ...newEntries]
         return combined.sort((a, b) => new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime() || new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
@@ -592,8 +653,9 @@ export default function PartyStatementPage() {
         product_type: '',
         quantity: '',
         rate: '',
-        paid_amount: '0',
-        sale_date: new Date().toISOString().split('T')[0],
+        paid_amount: '',
+        payment_mode: 'cash',
+        sale_date: getTodayLocal(),
         note: ''
       })
     } catch (error: any) {
@@ -613,10 +675,48 @@ export default function PartyStatementPage() {
 
     const amount = Number(updateAmount)
 
+    const isCustomer = party.party_type === 'customer'
+    let maxAllowed = 0
+    const actionName = updateType === 'receive' ? 'receive' : 'give'
+    
+    if (isCustomer) {
+      if (updateType === 'receive') {
+        maxAllowed = party.current_balance > 0 ? party.current_balance : 0
+      } else {
+        maxAllowed = party.current_balance < 0 ? Math.abs(party.current_balance) : 0
+      }
+    } else {
+      if (updateType === 'receive') {
+        maxAllowed = party.current_balance < 0 ? Math.abs(party.current_balance) : 0
+      } else {
+        maxAllowed = party.current_balance > 0 ? party.current_balance : 0
+      }
+    }
+
+    if (amount > maxAllowed) {
+      toast.error(`Cannot ${actionName} more than the total balance due (₹${maxAllowed.toLocaleString('en-IN')})`)
+      return
+    }
+
     setIsUpdating(true)
     try {
-      // Receive Money = Credit, Give Money = Debit
+      const isCustomer = party.party_type === 'customer'
       const entryType = updateType === 'receive' ? 'credit' : 'debit'
+      
+      // Add the record directly to payments table first
+      const { data: paymentRecord, error: payError } = await supabase
+        .from('payments')
+        .insert({
+          party_id: party.id,
+          amount: amount,
+          payment_date: updateDate,
+          payment_mode: updatePaymentMode,
+          note: updateNote || (updateType === 'receive' ? 'Payment Received' : 'Payment Given')
+        })
+        .select()
+        .single()
+        
+      if (payError) throw payError
       
       const { data: newEntry, error: ledgerError } = await supabase
         .from('ledger_entries')
@@ -626,7 +726,8 @@ export default function PartyStatementPage() {
           entry_type: entryType,
           amount: amount,
           note: updateNote || (updateType === 'receive' ? 'Payment Received' : 'Payment Given'),
-          related_type: 'payment'
+          related_type: 'payment',
+          related_id: paymentRecord.id
         })
         .select()
         .single()
@@ -634,7 +735,6 @@ export default function PartyStatementPage() {
 
       // Manually calculate and update the party's current balance
       let newBalance = party.current_balance
-      const isCustomer = party.party_type === 'customer'
       if (isCustomer) {
         if (entryType === 'debit') newBalance += amount
         else newBalance -= amount
@@ -654,7 +754,10 @@ export default function PartyStatementPage() {
       setParty(prev => prev ? { ...prev, current_balance: newBalance } : null)
 
       if (newEntry) {
-        setEntries(prev => [...prev, newEntry])
+        setEntries(prev => {
+          const combined = [...prev, { ...newEntry, payment_mode: updatePaymentMode }]
+          return combined.sort((a, b) => new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime() || new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        })
       }
       
       toast.success('Balance updated successfully')
@@ -676,7 +779,7 @@ export default function PartyStatementPage() {
     setEditEntryFormData({
       amount: entry.amount.toString(),
       note: entry.note || '',
-      entry_date: entry.entry_date || new Date().toISOString().split('T')[0]
+      entry_date: entry.entry_date || getTodayLocal()
     })
   }
 
@@ -722,16 +825,16 @@ export default function PartyStatementPage() {
           .eq('id', party.id)
 
         if (partyError) throw partyError
+      }
         
-        // Update related records
-        if (editingEntry.related_id) {
-          if (editingEntry.related_type === 'payment') {
-             await supabase.from('payments').update({ amount: newAmount }).eq('id', editingEntry.related_id)
-          } else if (editingEntry.related_type === 'sale') {
-             await supabase.from('sales').update({ total_amount: newAmount }).eq('id', editingEntry.related_id)
-          } else if (editingEntry.related_type === 'production') {
-             await supabase.from('production_records').update({ total_value: newAmount }).eq('id', editingEntry.related_id)
-          }
+      // Update related records with both new amount and new date
+      if (editingEntry.related_id) {
+        if (editingEntry.related_type === 'payment') {
+           await supabase.from('payments').update({ amount: newAmount, payment_date: editEntryFormData.entry_date }).eq('id', editingEntry.related_id)
+        } else if (editingEntry.related_type === 'sale') {
+           await supabase.from('sales').update({ total_amount: newAmount, sale_date: editEntryFormData.entry_date }).eq('id', editingEntry.related_id)
+        } else if (editingEntry.related_type === 'production') {
+           await supabase.from('production_records').update({ total_value: newAmount, production_date: editEntryFormData.entry_date }).eq('id', editingEntry.related_id)
         }
       }
 
@@ -791,6 +894,28 @@ export default function PartyStatementPage() {
       fetchStatement()
     } catch (error: any) {
       toast.error('Failed to delete entry: ' + error.message)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleFixDiscrepancy = async (amount: number, type: 'credit' | 'debit') => {
+    if (!party) return
+    setIsUpdating(true)
+    try {
+      const { error } = await supabase.from('ledger_entries').insert({
+        party_id: party.id,
+        entry_type: type,
+        amount: amount,
+        entry_date: getTodayLocal(),
+        note: 'Old due carried to new statement',
+        related_type: 'adjustment'
+      })
+      if (error) throw error
+      toast.success('Discrepancy fixed successfully')
+      fetchStatement()
+    } catch (error: any) {
+      toast.error('Failed to fix discrepancy: ' + error.message)
     } finally {
       setIsUpdating(false)
     }
@@ -858,9 +983,50 @@ export default function PartyStatementPage() {
 
   if (!party) return null
 
+  // Calculate opening balance date
+  let openingBalanceDate = formatSafeDate(party.created_at);
+  let displayNote = party.note || '';
+
+  if (displayNote.includes('Due Started: ')) {
+    const match = displayNote.match(/Due Started:\s*(\d{4}-\d{2}-\d{2})/);
+    if (match && match[1]) {
+      openingBalanceDate = formatSafeDate(match[1]);
+      displayNote = displayNote.replace(`Due Started: ${match[1]}\n`, '').replace(`Due Started: ${match[1]}`, '').trim();
+    }
+  }
+
+  let actualOpeningBalance = party.opening_balance || 0;
+  let actualOpeningDate = openingBalanceDate;
+  let startIndex = 0;
+  let openingBalanceNote = '';
+
+  if (entries.length > 0) {
+    const firstEntry = entries[0];
+    if (firstEntry.related_type === 'adjustment') {
+      const timeDiff = Math.abs(new Date(firstEntry.created_at).getTime() - new Date(party.created_at).getTime());
+      // Treat as opening balance if opening_balance is 0 and it was created together, or if it exactly matches
+      if (actualOpeningBalance === 0 || firstEntry.amount === actualOpeningBalance || timeDiff < 60000) {
+        actualOpeningDate = formatSafeDate(firstEntry.entry_date);
+        if (party.party_type === 'customer') {
+          actualOpeningBalance = firstEntry.entry_type === 'debit' ? firstEntry.amount : -firstEntry.amount;
+        } else {
+          actualOpeningBalance = firstEntry.entry_type === 'credit' ? firstEntry.amount : -firstEntry.amount;
+        }
+        openingBalanceNote = firstEntry.note || '';
+        startIndex = 1;
+      }
+    }
+  }
+
+  if (!openingBalanceNote && displayNote) {
+    openingBalanceNote = displayNote.split('Internal:')[0].trim();
+  }
+
   // Calculate running balance
-  let runningBalance = party.opening_balance || 0
-  const statementRows = entries.map(entry => {
+  let runningBalance = actualOpeningBalance;
+  const statementRows = [];
+  for (let i = startIndex; i < entries.length; i++) {
+    const entry = entries[i];
     const isCustomer = party.party_type === 'customer'
     const oldBalance = runningBalance
     
@@ -872,12 +1038,12 @@ export default function PartyStatementPage() {
       else runningBalance -= entry.amount
     }
     
-    return {
+    statementRows.push({
       ...entry,
       oldBalance,
       balance: runningBalance
-    }
-  })
+    })
+  }
 
   // Check for discrepancy between running balance and current balance due to manual edits
   const discrepancy = party.current_balance - runningBalance
@@ -893,10 +1059,10 @@ export default function PartyStatementPage() {
 
     statementRows.push({
       id: 'manual-adjustment',
-      entry_date: new Date().toISOString().split('T')[0],
+      entry_date: getTodayLocal(),
       entry_type: entryType,
       amount: Math.abs(discrepancy),
-      note: 'Manual balance override from dashboard',
+      note: 'Old due carried to new statement',
       related_type: 'adjustment',
       created_at: new Date().toISOString(),
       oldBalance: runningBalance,
@@ -944,9 +1110,12 @@ export default function PartyStatementPage() {
   const saleRate = parseFloat(saleFormData.rate) || 0
   const saleTotalAmount = saleQuantity * saleRate
   const saleOldBalance = party?.current_balance || 0
-  const saleTotalDue = saleOldBalance + saleTotalAmount
+
+  const balanceAfterSale = saleOldBalance + saleTotalAmount
+  const saleTotalDue = balanceAfterSale > 0 ? balanceAfterSale : 0
+
   const salePaidNow = parseFloat(saleFormData.paid_amount) || 0
-  const saleNewBalance = saleTotalDue - salePaidNow
+  const saleNewBalance = balanceAfterSale - salePaidNow
 
   // Add Production Modal Calculations
   const productionQuantity = parseInt(productionFormData.output_quantity) || 0
@@ -955,20 +1124,38 @@ export default function PartyStatementPage() {
   const productionPaidAmount = parseFloat(productionFormData.paid_amount) || 0
   const productionDueAmount = productionTotalValue - productionPaidAmount
 
+  const isCustomerType = party?.party_type === 'customer'
+  let maxUpdateAllowed = 0
+  if (party) {
+    if (isCustomerType) {
+      if (updateType === 'receive') {
+        maxUpdateAllowed = party.current_balance > 0 ? party.current_balance : 0
+      } else {
+        maxUpdateAllowed = party.current_balance < 0 ? Math.abs(party.current_balance) : 0
+      }
+    } else {
+      if (updateType === 'receive') {
+        maxUpdateAllowed = party.current_balance < 0 ? Math.abs(party.current_balance) : 0
+      } else {
+        maxUpdateAllowed = party.current_balance > 0 ? party.current_balance : 0
+      }
+    }
+  }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header Controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 print:hidden">
         <div className="flex items-center gap-2 sm:gap-4 min-w-0 w-full sm:w-auto">
-          <button onClick={() => router.back()} className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
+          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-lg sm:text-2xl font-bold flex items-center gap-2 truncate">
+          <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 min-w-0">
             <FileText className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
             <span className="truncate">Account Statement</span>
           </h2>
         </div>
-        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
+        <div className="flex w-full sm:w-auto gap-2">
           <button 
             onClick={() => window.print()} 
             className="flex-1 sm:flex-none bg-black text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors text-sm sm:text-base"
@@ -1026,7 +1213,10 @@ export default function PartyStatementPage() {
                 </button>
               )}
               <button 
-                onClick={() => setIsUpdateModalOpen(true)}
+                onClick={() => {
+                  setUpdateType(party.party_type === 'customer' ? 'receive' : 'give')
+                  setIsUpdateModalOpen(true)
+                }}
                 className="flex-1 sm:flex-none text-xs sm:text-sm bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 +/- Update Balance
@@ -1050,16 +1240,21 @@ export default function PartyStatementPage() {
             </thead>
             <tbody>
               <tr className="border-b-2 border-gray-300 bg-gray-100">
-                <td colSpan={2} className="p-3 font-bold text-gray-900 text-right">Opening Balance</td>
+                <td colSpan={2} className="p-3 font-bold text-gray-900 text-right">
+                  <div>Opening Balance - ({actualOpeningDate})</div>
+                  {openingBalanceNote && openingBalanceNote !== 'Opening Balance' && (
+                    <div className="text-xs text-gray-600 font-medium mt-1 whitespace-pre-wrap">{openingBalanceNote}</div>
+                  )}
+                </td>
                 <td colSpan={2} className="p-3"></td>
                 <td className="p-3 text-right font-bold text-gray-900 relative">
-                  <span className="pr-16">{formatBalance(party.opening_balance || 0)}</span>
+                  <span className="pr-16">{formatBalance(actualOpeningBalance)}</span>
                 </td>
               </tr>
               
               {displayRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-4 text-center text-gray-500">No transactions found</td>
+                  <td colSpan={5} className="p-4 text-center text-gray-500">No additional transactions</td>
                 </tr>
               ) : (
                 displayRows.map((row, index) => {
@@ -1075,6 +1270,8 @@ export default function PartyStatementPage() {
                     ? (row.entry_type === 'credit' ? row.amount : null)
                     : (row.entry_type === 'debit' ? row.amount : null);
                   
+                  const cleanedNote = row.note ? row.note.split('Internal:')[0].trim() : '';
+                  
                   return (
                     <React.Fragment key={row.id}>
                       {needsDivider && (
@@ -1084,25 +1281,42 @@ export default function PartyStatementPage() {
                       )}
                       <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50 group">
                     <td className="p-3 whitespace-nowrap text-sm">
-                      {new Date(row.entry_date).toLocaleDateString('en-IN', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
+                      {formatSafeDate(row.entry_date)}
                     </td>
                     <td className="p-3">
-                      <p className="font-semibold text-gray-900 capitalize">{row.related_type}</p>
-                      <p className="text-sm text-gray-500">{renderNote(row.note)}</p>
+                      <p className="font-semibold text-gray-900 capitalize">
+                        {row.related_type === 'adjustment' ? 'payment' : row.related_type}
+                      </p>
+                      {cleanedNote && cleanedNote.split('\n')[0].toLowerCase() !== (row.related_type === 'adjustment' ? 'payment' : row.related_type || '').toLowerCase() && (
+                        <p className="text-sm text-gray-500 line-clamp-2" title={cleanedNote.split('\n')[0]}>{renderNote(cleanedNote.split('\n')[0])}</p>
+                      )}
+                      {row.payment_mode && (
+                        <div className="mt-1">
+                          <span className="text-[11px] text-gray-600 capitalize border border-gray-200 bg-gray-50 px-1.5 py-0.5 rounded inline-block">
+                            Mode: {row.payment_mode.replace('_', ' ')}
+                          </span>
+                        </div>
+                      )}
                       {billAmount !== null && row.related_type !== 'adjustment' && (
-                        <p className="text-xs font-medium text-gray-600 mt-1 bg-red-50 inline-block px-2 py-0.5 rounded border border-red-100">
-                          (Old-Balance) {formatBalance(row.oldBalance)} + ₹{billAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
-                        </p>
+                        <div className="mt-1">
+                          <p className="text-xs font-medium text-gray-600 bg-red-50 inline-block px-2 py-0.5 rounded border border-red-100">
+                            (Old-Balance) {formatBalance(row.oldBalance)} + ₹{billAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
+                          </p>
+                        </div>
                       )}
                       {paymentAmount !== null && row.related_type !== 'adjustment' && (
-                        <p className="text-xs font-medium text-gray-600 mt-1 bg-green-50 inline-block px-2 py-0.5 rounded border border-green-100">
-                          (Old-Balance) {formatBalance(row.oldBalance)} - ₹{paymentAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
-                        </p>
+                        <div className="mt-1">
+                          <p className="text-xs font-medium text-gray-600 bg-green-50 inline-block px-2 py-0.5 rounded border border-green-100">
+                            (Old-Balance) {formatBalance(row.oldBalance)} - ₹{paymentAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
+                          </p>
+                        </div>
                       )}
+                      {cleanedNote && cleanedNote.includes('\n') && (
+                        <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap font-medium">{cleanedNote.substring(cleanedNote.indexOf('\n') + 1)}</p>
+                      )}
+                      <p className="text-[11px] text-gray-500 mt-1.5 font-medium flex items-center gap-1">
+                        <Calendar className="w-3 h-3" /> Date: {formatSafeDate(row.entry_date)}
+                      </p>
                     </td>
                     <td className="p-3 text-right text-red-600 font-medium">
                       {billAmount !== null ? '₹' + billAmount.toLocaleString('en-IN') : '-'}
@@ -1112,6 +1326,20 @@ export default function PartyStatementPage() {
                     </td>
                     <td className="p-3 text-right font-bold text-gray-900 relative">
                       <span className="pr-16">{formatBalance(row.balance)}</span>
+                      {row.id === 'manual-adjustment' && (
+                        <div 
+                          className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center print:hidden"
+                          data-html2canvas-ignore="true"
+                        >
+                          <button 
+                            onClick={() => handleFixDiscrepancy(row.amount, row.entry_type)}
+                            className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors" 
+                            title="Click to fix missing ledger entry"
+                          >
+                            Fix
+                          </button>
+                        </div>
+                      )}
                       {row.id !== 'manual-adjustment' && (
                         <div 
                           className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity print:hidden"
@@ -1159,7 +1387,7 @@ export default function PartyStatementPage() {
           <div className="flex flex-col items-center self-end order-1 sm:order-2">
             <div className="h-20 w-40 sm:w-48 border-b-2 border-gray-300 border-dashed mb-2 flex items-end justify-center pb-1">
               
-              <img src="/sign.jpg" alt="Signature" className="max-h-full max-w-full object-contain" />
+              <img src="/sign.png" alt="Signature" className="max-h-full max-w-full object-contain" />
             </div>
             <p className="font-bold text-gray-800 uppercase text-sm tracking-widest">IZTEXPORT</p>
             <p className="text-xs text-gray-500">Authorized Signature</p>
@@ -1220,12 +1448,30 @@ export default function PartyStatementPage() {
                 <input 
                   type="number" 
                   min="0"
+                  max={maxUpdateAllowed}
                   step="0.01"
                   value={updateAmount}
                   onChange={(e) => setUpdateAmount(e.target.value)}
                   placeholder="Enter amount"
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Max allowed: ₹{maxUpdateAllowed.toLocaleString('en-IN')}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode</label>
+                <select
+                  value={updatePaymentMode}
+                  onChange={(e) => setUpdatePaymentMode(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none bg-white"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                </select>
               </div>
 
               <div>
@@ -1309,7 +1555,7 @@ export default function PartyStatementPage() {
                             Issued: {issue.meters_given}m • {issue.product_type || 'No product specified'}
                           </p>
                           <p className="text-xs text-gray-400">
-                            {new Date(issue.issue_date).toLocaleDateString()}
+                            {formatSafeDate(issue.issue_date)}
                           </p>
                         </div>
                         <button
@@ -1365,7 +1611,14 @@ export default function PartyStatementPage() {
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-4">
                   <div>
                     <label className="block text-sm font-medium mb-2 text-blue-900">Meters to Issue for this Production *</label>
-                    <input type="number" required min="0.01" max={selectedStock.meters_remaining} step="0.01" placeholder="Enter meters used" value={metersToIssue} onChange={(e) => setMetersToIssue(e.target.value)} className="w-full px-3 py-3 border rounded-lg border-blue-200 focus:ring-blue-500" />
+                    <input type="number" required min="0.01" max={selectedStock.meters_remaining} step="0.01" placeholder="Enter meters used" value={metersToIssue} onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0
+                      if (val > selectedStock.meters_remaining) {
+                        setMetersToIssue(selectedStock.meters_remaining.toString())
+                      } else {
+                        setMetersToIssue(e.target.value)
+                      }
+                    }} className="w-full px-3 py-3 border rounded-lg border-blue-200 focus:ring-blue-500" />
                     <p className="text-xs text-blue-600 mt-1">
                       This will automatically issue the cloth from raw stock to {party.name} and record the production.
                     </p>
@@ -1411,14 +1664,34 @@ export default function PartyStatementPage() {
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
-                    <input type="number" min="0" max={productionTotalValue} step="0.01" value={productionFormData.paid_amount} onChange={(e) => setProductionFormData({ ...productionFormData, paid_amount: e.target.value })} className="w-full px-3 py-3 border rounded-lg" />
-                    {productionTotalValue > 0 && (
-                      <p className="text-sm text-orange-600 mt-1">
-                        Due after payment: ₹{productionDueAmount.toLocaleString('en-IN')}
-                      </p>
-                    )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
+                      <input type="number" min="0" max={productionTotalValue > 0 ? productionTotalValue : 0} step="0.01" value={productionFormData.paid_amount} onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0
+                        if (productionTotalValue > 0 && val > productionTotalValue) {
+                          setProductionFormData({ ...productionFormData, paid_amount: productionTotalValue.toString() })
+                        } else if (productionTotalValue <= 0 && val > 0) {
+                          setProductionFormData({ ...productionFormData, paid_amount: '' })
+                        } else {
+                          setProductionFormData({ ...productionFormData, paid_amount: e.target.value })
+                        }
+                      }} placeholder="0.00" className="w-full px-3 py-3 border rounded-lg" />
+                      {productionTotalValue > 0 && (
+                        <p className="text-sm text-orange-600 mt-1">
+                          Due: ₹{productionDueAmount.toLocaleString('en-IN')}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Payment Mode</label>
+                      <select value={productionFormData.payment_mode} onChange={(e) => setProductionFormData({ ...productionFormData, payment_mode: e.target.value })} className="w-full px-3 py-3 border rounded-lg bg-white" disabled={!productionFormData.paid_amount || parseFloat(productionFormData.paid_amount) <= 0}>
+                        <option value="cash">Cash</option>
+                        <option value="upi">UPI</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cheque">Cheque</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div>
@@ -1474,13 +1747,12 @@ export default function PartyStatementPage() {
                       <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
                       <input
                         type="text"
-                        placeholder={productsLoading ? 'Loading products...' : 'Search or enter new product...'}
+                        placeholder={productsLoading ? 'Loading products...' : 'Search product...'}
                         value={productSearchQuery}
                         onChange={(e) => {
                           setProductSearchQuery(e.target.value)
                           setShowProductDropdown(true)
                           if (saleFormData.product_type) setSaleFormData({ ...saleFormData, product_type: '' })
-                          if (isNewProduct) setIsNewProduct(false)
                         }}
                         onFocus={() => setShowProductDropdown(true)}
                         onBlur={() => setTimeout(() => setShowProductDropdown(false), 200)}
@@ -1489,14 +1761,9 @@ export default function PartyStatementPage() {
                         required
                       />
                     </div>
-                    {saleFormData.product_type && !isNewProduct && (
+                    {saleFormData.product_type && (
                       <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium whitespace-nowrap">
                         ✓ In Stock
-                      </span>
-                    )}
-                    {isNewProduct && (
-                      <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium whitespace-nowrap flex items-center justify-center">
-                        <ArrowRight className="w-4 h-4 mr-1" /> New
                       </span>
                     )}
                   </div>
@@ -1515,16 +1782,10 @@ export default function PartyStatementPage() {
                             <div className="text-sm text-gray-500">Available: {stock.quantity}</div>
                           </button>
                         ))}
-                      {productSearchQuery.trim() && !productStocks.some(p => p.product_type.toLowerCase() === productSearchQuery.toLowerCase()) && (
-                        <button type="button" onClick={() => {
-                          const newProduct = productSearchQuery.trim()
-                          const capitalizedNewProduct = newProduct.charAt(0).toUpperCase() + newProduct.slice(1).toLowerCase()
-                          setSaleFormData({ ...saleFormData, product_type: capitalizedNewProduct })
-                          setProductSearchQuery(capitalizedNewProduct)
-                          setShowProductDropdown(false)
-                        }} className="w-full text-left px-4 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">
-                          + Add "{productSearchQuery.trim()}" as new product
-                        </button>
+                      {productSearchQuery.trim() && productStocks.filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase())).length === 0 && (
+                        <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                          No products found in stock
+                        </div>
                       )}
                     </div>
                   )}
@@ -1566,7 +1827,7 @@ export default function PartyStatementPage() {
                     onChange={(e) => setSaleFormData({ ...saleFormData, quantity: e.target.value })}
                     className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
                   />
-                  {saleFormData.product_type && !isNewProduct && (
+                  {saleFormData.product_type && (
                     <div className="flex justify-between items-center mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-md border">
                       <span>In Stock: <span className="font-bold text-gray-800">{productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity || 0}</span></span>
                     </div>
@@ -1593,9 +1854,19 @@ export default function PartyStatementPage() {
                   <input
                     type="number"
                     min="0"
+                    max={saleTotalDue > 0 ? saleTotalDue : 0}
                     step="0.01"
                     value={saleFormData.paid_amount}
-                    onChange={(e) => setSaleFormData({ ...saleFormData, paid_amount: e.target.value })}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0
+                      if (saleTotalDue > 0 && val > saleTotalDue) {
+                        setSaleFormData({ ...saleFormData, paid_amount: saleTotalDue.toString() })
+                      } else if (saleTotalDue <= 0 && val > 0) {
+                        setSaleFormData({ ...saleFormData, paid_amount: '' })
+                      } else {
+                        setSaleFormData({ ...saleFormData, paid_amount: e.target.value })
+                      }
+                    }}
                     className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
                   />
                 </div>
@@ -1609,6 +1880,21 @@ export default function PartyStatementPage() {
                     className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment Mode</label>
+                <select
+                  value={saleFormData.payment_mode}
+                  onChange={(e) => setSaleFormData({ ...saleFormData, payment_mode: e.target.value })}
+                  className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none bg-white"
+                  disabled={!saleFormData.paid_amount || parseFloat(saleFormData.paid_amount) <= 0}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                </select>
               </div>
 
               {/* New Balance Preview */}

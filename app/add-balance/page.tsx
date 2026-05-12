@@ -10,6 +10,8 @@ interface Customer {
   id: string
   name: string
   current_balance: number
+  phone?: string
+  address?: string
 }
 
 export default function AddBalancePage() {
@@ -21,11 +23,18 @@ export default function AddBalancePage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
+  const getTodayLocal = () => {
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+  };
+
   const [formData, setFormData] = useState({
     customer_id: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
-    note: 'Opening Balance'
+    date: getTodayLocal(),
+    note: 'Opening Balance',
+    details: '',
+    internalNote: ''
   })
 
   useEffect(() => {
@@ -35,7 +44,7 @@ export default function AddBalancePage() {
   const fetchCustomers = async () => {
     const { data } = await supabase
       .from('parties')
-      .select('id, name, current_balance')
+      .select('id, name, current_balance, phone, address')
       .eq('party_type', 'customer')
       .order('name')
       
@@ -81,55 +90,56 @@ export default function AddBalancePage() {
     setIsSubmitting(true)
 
     try {
-      if (isNewCustomer) {
-        // Create new customer with opening balance
-        const { data: newCustomer, error: customerError } = await supabase
-          .from('parties')
-          .insert({
-            name: finalCustomerName,
-            party_type: 'customer',
-            opening_balance: amount,
-            current_balance: amount
-          })
-          .select()
-          .single()
+      let customerPhone = null
+      let customerAddress = null
 
-        if (customerError) throw customerError
-      } else {
-        // Update existing customer
+      if (!isNewCustomer && formData.customer_id) {
         const customer = customers.find(c => c.id === formData.customer_id)
-        if (!customer) throw new Error('Customer not found')
-        
-        // Find the latest statement or just update the one we have
-        const { data: stmts } = await supabase
-          .from('parties')
-          .select('id, current_balance')
-          .eq('name', finalCustomerName)
-          .eq('party_type', 'customer')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          
-        if (stmts && stmts.length > 0) {
-          const latestStmt = stmts[0]
-          const newBalance = Number(latestStmt.current_balance) + amount
-          
-          const { error: updateError } = await supabase
-            .from('parties')
-            .update({ current_balance: newBalance })
-            .eq('id', latestStmt.id)
-            
-          if (updateError) throw updateError
-          
-          await supabase.from('ledger_entries').insert({
-            party_id: latestStmt.id,
-            entry_type: 'debit',
-            amount: amount,
-            related_type: 'adjustment',
-            entry_date: formData.date,
-            note: formData.note
-          })
+        if (customer) {
+          customerPhone = customer.phone
+          customerAddress = customer.address
         }
       }
+
+      const finalNote = formData.details.trim() 
+        ? `${formData.note.trim()}\n${formData.details.trim()}`
+        : formData.note.trim();
+
+      const partyNote = [
+        `Due Started: ${formData.date}`,
+        finalNote, 
+        formData.internalNote.trim() ? `Internal: ${formData.internalNote.trim()}` : ''
+      ].filter(Boolean).join('\n');
+
+      // Always create a new statement (party record) even for existing customers
+      const { data: newCustomer, error: customerError } = await supabase
+        .from('parties')
+        .insert({
+          name: finalCustomerName,
+          party_type: 'customer',
+          opening_balance: 0,
+          current_balance: amount,
+          note: partyNote || null,
+          ...(customerPhone ? { phone: customerPhone } : {}),
+          ...(customerAddress ? { address: customerAddress } : {})
+        })
+        .select()
+        .single()
+
+      if (customerError) throw customerError
+
+      const { error: ledgerError } = await supabase
+        .from('ledger_entries')
+        .insert({
+          party_id: newCustomer.id,
+          entry_type: 'debit',
+          amount: amount,
+          related_type: 'adjustment',
+          entry_date: formData.date,
+          note: finalNote || 'Opening Balance'
+        })
+
+      if (ledgerError) throw ledgerError
 
       toast.success('Balance added successfully')
       router.push('/all-customers')
@@ -255,14 +265,38 @@ export default function AddBalancePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Note</label>
-            <textarea
-              rows={2}
-              placeholder="E.g., Opening balance, manual adjustment..."
+            <label className="block text-sm font-medium mb-2">Particulars *</label>
+            <input
+              type="text"
+              required
               value={formData.note}
               onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+              className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none mb-4"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Manual Details (Optional)</label>
+            <textarea
+              rows={2}
+              placeholder="E.g., payment for shirts or pants..."
+              value={formData.details}
+              onChange={(e) => setFormData({ ...formData, details: e.target.value })}
               className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
             />
+            <p className="text-xs text-gray-500 mt-1">This will be shown below the balance calculation in the statement.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Internal Note (Optional)</label>
+            <textarea
+              rows={2}
+              placeholder="Private note for your reference..."
+              value={formData.internalNote}
+              onChange={(e) => setFormData({ ...formData, internalNote: e.target.value })}
+              className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">This will only be visible to you and won't appear on the statement.</p>
           </div>
         </div>
 

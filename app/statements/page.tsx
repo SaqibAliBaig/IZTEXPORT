@@ -109,47 +109,61 @@ export default function StatementsPage() {
 
       {/* Parties List */}
       <div className="grid gap-3 sm:gap-4">
-        {filteredParties.map(party => (
-          <Link
-            key={party.id}
-            href={`/statements/${party.id}`}
-            className="relative group bg-white rounded-xl border p-3 sm:p-4 flex flex-row items-center justify-between gap-3 sm:gap-4 transition-all hover:border-gray-400 hover:shadow-md"
-          >
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                {getIcon(party.party_type)}
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-base sm:text-lg truncate">{party.name}</h3>
-                <div className="flex items-center gap-1 mt-0.5 text-xs sm:text-sm text-gray-500">
-                  <span className="capitalize">{party.party_type}</span>
-                  <span className="hidden sm:inline"> • {new Date(party.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                  {party.note && (
-                    <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400 ml-1 flex-shrink-0" />
-                  )}
+        {filteredParties.map(party => {
+          let displayDate = new Date(party.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          let displayNote = party.note || '';
+
+          if (displayNote.includes('Due Started: ')) {
+            const match = displayNote.match(/Due Started:\s*(\d{4}-\d{2}-\d{2})/);
+            if (match && match[1]) {
+              const [year, month, day] = match[1].split('-');
+              displayDate = new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+              displayNote = displayNote.replace(`Due Started: ${match[1]}\n`, '').replace(`Due Started: ${match[1]}`, '').trim();
+            }
+          }
+
+          return (
+            <Link
+              key={party.id}
+              href={`/statements/${party.id}`}
+              className="relative group bg-white rounded-xl border p-3 sm:p-4 flex flex-row items-center justify-between gap-3 sm:gap-4 transition-all hover:border-gray-400 hover:shadow-md"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                  {getIcon(party.party_type)}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-base sm:text-lg truncate">{party.name}</h3>
+                  <div className="flex items-center gap-1 mt-0.5 text-xs sm:text-sm text-gray-500">
+                    <span className="capitalize">{party.party_type}</span>
+                    <span className="hidden sm:inline"> • {displayDate}</span>
+                    {displayNote && (
+                      <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400 ml-1 flex-shrink-0" />
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0 ml-2">
-              <div className="text-right">
-                <p className="text-[10px] sm:text-sm text-gray-500">Balance</p>
-                <p className={`font-bold text-sm sm:text-base ${party.current_balance > 0 ? 'text-green-600' : party.current_balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                  {formatBalance(party.current_balance)}
-                </p>
+              <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0 ml-2">
+                <div className="text-right">
+                  <p className="text-[10px] sm:text-sm text-gray-500">Balance</p>
+                  <p className={`font-bold text-sm sm:text-base ${party.current_balance > 0 ? 'text-green-600' : party.current_balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                    {formatBalance(party.current_balance)}
+                  </p>
+                </div>
+                <FileText className="hidden sm:block w-5 h-5 text-gray-400 flex-shrink-0" />
               </div>
-              <FileText className="hidden sm:block w-5 h-5 text-gray-400 flex-shrink-0" />
-            </div>
 
             {/* Tooltip for Note */}
-            {party.note && (
+              {displayNote && (
               <div className="absolute bottom-full right-0 md:left-1/2 md:right-auto md:-translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-[calc(100vw-2rem)] md:max-w-xs p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 whitespace-pre-wrap">
-                <span className="font-semibold text-gray-300">Note:</span> {party.note}
+                  <span className="font-semibold text-gray-300">Note:</span> {displayNote}
                 {/* Tooltip downward arrow */}
                 <div className="absolute top-full right-6 md:left-1/2 md:right-auto md:-translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
               </div>
             )}
           </Link>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

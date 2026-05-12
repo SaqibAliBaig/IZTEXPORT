@@ -23,7 +23,7 @@ export default function AddDirectGarmentsPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [productStocks, setProductStocks] = useState<{ product_type: string, quantity: number }[]>([])
-  const [openingBalance, setOpeningBalance] = useState('0')
+  const [openingBalance, setOpeningBalance] = useState('')
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [showProductDropdown, setShowProductDropdown] = useState(false)
   const [isNewProduct, setIsNewProduct] = useState(false)
@@ -33,7 +33,8 @@ export default function AddDirectGarmentsPage() {
     product_type: '',
     quantity: '',
     rate_per_unit: '',
-    paid_amount: '0',
+    paid_amount: '',
+    payment_mode: 'cash',
     purchase_date: new Date().toISOString().split('T')[0],
     note: ''
   })
@@ -54,7 +55,7 @@ export default function AddDirectGarmentsPage() {
     const { data } = await supabase
       .from('parties')
       .select('id, name, current_balance, party_type')
-      .in('party_type', ['factory', 'supplier'])
+      .eq('party_type', 'factory')
       .order('name')
     if (data) {
       const grouped = data.reduce((acc, curr) => {
@@ -152,6 +153,16 @@ export default function AddDirectGarmentsPage() {
 
     setIsSubmitting(true)
 
+    if (totalDue > 0 && paidNow > totalDue) {
+      toast.error(`Paid amount cannot exceed total due (₹${totalDue.toLocaleString('en-IN')})`)
+      setIsSubmitting(false)
+      return
+    } else if (totalDue <= 0 && paidNow > 0) {
+      toast.error('Cannot make a payment when there is no due')
+      setIsSubmitting(false)
+      return
+    }
+
     // Always create a new statement
     const { data: newParty, error: partyError } = await supabase
       .from('parties')
@@ -159,7 +170,8 @@ export default function AddDirectGarmentsPage() {
         name: finalPartyName,
         party_type: finalPartyType,
         current_balance: newBalance,
-        opening_balance: oldBalance
+        opening_balance: oldBalance,
+        note: formData.note || null
       })
       .select()
       .single()
@@ -192,11 +204,11 @@ export default function AddDirectGarmentsPage() {
             .from('ledger_entries')
             .insert({
               party_id: stmt.id,
-              entry_type: stmt.current_balance > 0 ? 'credit' : 'debit',
+              entry_type: stmt.current_balance > 0 ? 'debit' : 'credit',
               amount: Math.abs(stmt.current_balance),
               related_type: 'adjustment',
               entry_date: formData.purchase_date,
-              note: 'Balance carried forward to new statement'
+              note: 'Old due carried to new statement'
             })
         }
       }
@@ -250,7 +262,7 @@ export default function AddDirectGarmentsPage() {
           related_id: production.id,
           amount: paidNow,
           payment_date: formData.purchase_date,
-          payment_mode: 'cash',
+          payment_mode: formData.payment_mode,
           note: `Payment for direct garments: ${formData.product_type}`
         })
         .select()
@@ -289,7 +301,7 @@ export default function AddDirectGarmentsPage() {
         <div className="bg-white rounded-xl p-4 border">
           <label className="block text-sm font-medium mb-2 flex items-center gap-2">
             <Store className="w-4 h-4" />
-            Supplier / Factory *
+            Factory *
           </label>
           <div className="relative">
             <div className="flex gap-2 items-center">
@@ -304,7 +316,7 @@ export default function AddDirectGarmentsPage() {
                     setShowDropdown(true)
                     if (formData.party_id) {
                       setFormData({ ...formData, party_id: '' })
-                      setOpeningBalance('0')
+                      setOpeningBalance('')
                     }
                     if (isNewParty) setIsNewParty(false)
                   }}
@@ -343,39 +355,21 @@ export default function AddDirectGarmentsPage() {
                   ))}
                 {searchQuery.trim() && !parties.some(p => p.name.toLowerCase() === searchQuery.toLowerCase()) && (
                   <div className="p-2 bg-blue-50 border-t">
-                    <p className="text-sm font-medium text-blue-800 mb-2 px-2">Add as new:</p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setIsNewParty(true)
-                          setNewPartyName(searchQuery.trim())
-                          setNewPartyType('factory')
-                          setFormData({ ...formData, party_id: 'new' })
-                          setOpeningBalance('0')
-                          setShowDropdown(false)
-                        }}
-                        className="flex-1 py-2 bg-white rounded border hover:bg-blue-100 text-sm font-medium"
-                      >
-                        + Factory
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setIsNewParty(true)
-                          setNewPartyName(searchQuery.trim())
-                          setNewPartyType('supplier')
-                          setFormData({ ...formData, party_id: 'new' })
-                          setOpeningBalance('0')
-                          setShowDropdown(false)
-                        }}
-                        className="flex-1 py-2 bg-white rounded border hover:bg-blue-100 text-sm font-medium"
-                      >
-                        + Supplier
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setIsNewParty(true)
+                        setNewPartyName(searchQuery.trim())
+                        setNewPartyType('factory')
+                        setFormData({ ...formData, party_id: 'new' })
+                        setOpeningBalance('')
+                        setShowDropdown(false)
+                      }}
+                      className="w-full py-2 bg-white rounded border hover:bg-blue-100 text-sm font-medium text-blue-700"
+                    >
+                      + Add "{searchQuery.trim()}" as new factory
+                    </button>
                   </div>
                 )}
               </div>
@@ -385,7 +379,18 @@ export default function AddDirectGarmentsPage() {
 
         {/* Opening Balance */}
         <div className="bg-white rounded-xl p-4 border">
-          <label className="block text-sm font-medium mb-2">Previous Due Balance (₹) {!isNewParty && formData.party_id ? '(Auto-filled)' : '(Optional)'}</label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-medium">Previous Due Balance (₹) {!isNewParty && formData.party_id ? '(Auto-filled)' : '(Optional)'}</label>
+            {parseFloat(openingBalance || '0') !== 0 && (
+              <button
+                type="button"
+                onClick={() => setOpeningBalance('')}
+                className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium"
+              >
+                Start Fresh Statement (Set to 0)
+              </button>
+            )}
+          </div>
           <input
             type="number"
             step="0.01"
@@ -396,7 +401,7 @@ export default function AddDirectGarmentsPage() {
           />
           <p className="text-xs text-gray-500 mt-1">
             {!isNewParty && formData.party_id 
-              ? 'Current balance from existing statement. You can modify this if needed.' 
+              ? 'Current balance from existing statement. You can modify this to 0 to start a fresh statement without carrying over previous dues.' 
               : 'Set this to carry over any previous dues into this new statement.'}
           </p>
         </div>
@@ -518,17 +523,43 @@ export default function AddDirectGarmentsPage() {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
-            <input
-              type="number"
-              min="0"
-              max={totalDue > 0 ? totalDue : undefined}
-              step="0.01"
-              value={formData.paid_amount}
-              onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
-              className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Amount Paid Now (₹)</label>
+              <input
+                type="number"
+                min="0"
+                max={totalDue > 0 ? totalDue : 0}
+                step="0.01"
+                placeholder="0.00"
+                value={formData.paid_amount}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 0
+                  if (totalDue > 0 && val > totalDue) {
+                    setFormData({ ...formData, paid_amount: totalDue.toString() })
+                  } else if (totalDue <= 0 && val > 0) {
+                    setFormData({ ...formData, paid_amount: '' })
+                  } else {
+                    setFormData({ ...formData, paid_amount: e.target.value })
+                  }
+                }}
+                className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Payment Mode</label>
+              <select
+                value={formData.payment_mode}
+                onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
+                className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none bg-white"
+                disabled={!formData.paid_amount || parseFloat(formData.paid_amount) <= 0}
+              >
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cheque">Cheque</option>
+              </select>
+            </div>
           </div>
 
           {/* New Balance Preview */}
