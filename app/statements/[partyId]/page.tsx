@@ -531,12 +531,6 @@ export default function PartyStatementPage() {
       return
     }
 
-    const availableStock = productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity || 0
-    if (quantity > availableStock) {
-      toast.error(`Cannot sell more than available stock (${availableStock})`)
-      return;
-    }
-
     setIsUpdating(true)
     const totalAmount = quantity * rate
 
@@ -1747,7 +1741,7 @@ export default function PartyStatementPage() {
                       <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
                       <input
                         type="text"
-                        placeholder={productsLoading ? 'Loading products...' : 'Search product...'}
+                        placeholder={productsLoading ? 'Loading products...' : 'Search or enter new product...'}
                         value={productSearchQuery}
                         onChange={(e) => {
                           setProductSearchQuery(e.target.value)
@@ -1761,9 +1755,14 @@ export default function PartyStatementPage() {
                         required
                       />
                     </div>
-                    {saleFormData.product_type && (
+                    {saleFormData.product_type && productStocks.some(p => p.product_type.toLowerCase() === saleFormData.product_type.toLowerCase()) && (
                       <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium whitespace-nowrap">
                         ✓ In Stock
+                      </span>
+                    )}
+                    {saleFormData.product_type && !productStocks.some(p => p.product_type.toLowerCase() === saleFormData.product_type.toLowerCase()) && (
+                      <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium whitespace-nowrap flex items-center justify-center">
+                        <ArrowRight className="w-4 h-4 mr-1" /> New
                       </span>
                     )}
                   </div>
@@ -1773,7 +1772,7 @@ export default function PartyStatementPage() {
                       {productStocks
                         .filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase()))
                         .map(stock => (
-                          <button type="button" key={stock.product_type} onClick={() => {
+                          <button type="button" key={stock.product_type} onMouseDown={(e) => e.preventDefault()} onClick={() => {
                             setSaleFormData({ ...saleFormData, product_type: stock.product_type })
                             setProductSearchQuery(stock.product_type)
                             setShowProductDropdown(false)
@@ -1782,10 +1781,16 @@ export default function PartyStatementPage() {
                             <div className="text-sm text-gray-500">Available: {stock.quantity}</div>
                           </button>
                         ))}
-                      {productSearchQuery.trim() && productStocks.filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase())).length === 0 && (
-                        <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                          No products found in stock
-                        </div>
+                      {productSearchQuery.trim() && !productStocks.some(p => p.product_type.toLowerCase() === productSearchQuery.toLowerCase()) && (
+                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => {
+                          const newProduct = productSearchQuery.trim()
+                          const capitalizedNewProduct = newProduct.charAt(0).toUpperCase() + newProduct.slice(1).toLowerCase()
+                          setSaleFormData({ ...saleFormData, product_type: capitalizedNewProduct })
+                          setProductSearchQuery(capitalizedNewProduct)
+                          setShowProductDropdown(false)
+                        }} className="w-full text-left px-4 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">
+                          + Add "{productSearchQuery.trim()}" as new product
+                        </button>
                       )}
                     </div>
                   )}
@@ -1821,15 +1826,14 @@ export default function PartyStatementPage() {
                     type="number"
                     required
                     min="1"
-                    max={productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity}
                     placeholder="0"
                     value={saleFormData.quantity}
                     onChange={(e) => setSaleFormData({ ...saleFormData, quantity: e.target.value })}
                     className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
                   />
-                  {saleFormData.product_type && (
+                  {saleFormData.product_type && productStocks.some(p => p.product_type.toLowerCase() === saleFormData.product_type.toLowerCase()) && (
                     <div className="flex justify-between items-center mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-md border">
-                      <span>In Stock: <span className="font-bold text-gray-800">{productStocks.find(p => p.product_type === saleFormData.product_type)?.quantity || 0}</span></span>
+                      <span>In Stock: <span className="font-bold text-gray-800">{productStocks.find(p => p.product_type.toLowerCase() === saleFormData.product_type.toLowerCase())?.quantity || 0}</span></span>
                     </div>
                   )}
                 </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Users, Package, DollarSign, Search } from 'lucide-react'
+import { ArrowLeft, Users, Package, DollarSign, Search, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Customer {
@@ -119,7 +119,7 @@ export default function AddSalePage() {
   const totalDue = oldBalance + totalAmount
   const paidNow = parseFloat(formData.paid_amount) || 0
   const newBalance = totalDue - paidNow
-  const availableStock = productStocks.find(p => p.product_type === formData.product_type)?.quantity || 0
+  const availableStock = productStocks.find(p => p.product_type.toLowerCase() === formData.product_type.toLowerCase())?.quantity || 0
   const remainingStock = availableStock - quantity
 
   const formatBalance = (amount: number) => {
@@ -140,11 +140,6 @@ export default function AddSalePage() {
     if (quantity <= 0 || rate <= 0) {
       toast.error('Please enter valid quantity and rate')
       return
-    }
-
-    if (quantity > availableStock) {
-      toast.error(`Cannot sell more than available stock (${availableStock})`)
-      return;
     }
 
     if (totalDue > 0 && paidNow > totalDue) {
@@ -379,7 +374,7 @@ export default function AddSalePage() {
                   <Search className="absolute left-3 top-3.5 text-gray-400 w-5 h-5" />
                   <input
                     type="text"
-                    placeholder={productsLoading ? 'Loading products...' : 'Search product...'}
+                    placeholder={productsLoading ? 'Loading products...' : 'Search or enter new product...'}
                     value={productSearchQuery}
                     onChange={(e) => {
                       setProductSearchQuery(e.target.value)
@@ -393,9 +388,14 @@ export default function AddSalePage() {
                     required
                   />
                 </div>
-                {formData.product_type && (
+                {formData.product_type && productStocks.some(p => p.product_type.toLowerCase() === formData.product_type.toLowerCase()) && (
                   <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium whitespace-nowrap">
                     ✓ In Stock
+                  </span>
+                )}
+                {formData.product_type && !productStocks.some(p => p.product_type.toLowerCase() === formData.product_type.toLowerCase()) && (
+                  <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium whitespace-nowrap flex items-center justify-center">
+                    <ArrowRight className="w-4 h-4 mr-1" /> New
                   </span>
                 )}
               </div>
@@ -414,10 +414,16 @@ export default function AddSalePage() {
                         <div className="text-sm text-gray-500">Available: {stock.quantity}</div>
                       </button>
                     ))}
-                  {productSearchQuery.trim() && productStocks.filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase())).length === 0 && (
-                    <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                      No products found in stock
-                    </div>
+                  {productSearchQuery.trim() && !productStocks.some(p => p.product_type.toLowerCase() === productSearchQuery.toLowerCase()) && (
+                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => {
+                      const newProduct = productSearchQuery.trim()
+                      const capitalizedNewProduct = newProduct.charAt(0).toUpperCase() + newProduct.slice(1).toLowerCase()
+                      setFormData({ ...formData, product_type: capitalizedNewProduct })
+                      setProductSearchQuery(capitalizedNewProduct)
+                      setShowProductDropdown(false)
+                    }} className="w-full text-left px-4 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">
+                      + Add "{productSearchQuery.trim()}" as new product
+                    </button>
                   )}
                 </div>
               )}
@@ -431,7 +437,6 @@ export default function AddSalePage() {
                 type="number"
                 required
                 min="1"
-                max={productStocks.find(p => p.product_type === formData.product_type)?.quantity}
                 placeholder="0"
                 value={formData.quantity}
                 onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}

@@ -224,6 +224,7 @@ export default function IssueClothPage() {
                     <button
                       type="button"
                       key={factory.id}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         setFormData({ ...formData, factory_id: factory.id })
                         setSearchQuery(factory.name)
@@ -238,6 +239,7 @@ export default function IssueClothPage() {
                 {searchQuery.trim() && !factories.some(f => f.name.toLowerCase() === searchQuery.toLowerCase()) && (
                   <button
                     type="button"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
                       setIsNewFactory(true)
                       setNewFactoryName(searchQuery.trim())

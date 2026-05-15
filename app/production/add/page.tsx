@@ -492,6 +492,7 @@ export default function AddProductionPage() {
                     <button
                       type="button"
                       key={factory.name}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         fetchFactoryIssues(factory.name)
                         setSearchQuery(factory.name)

@@ -340,6 +340,7 @@ export default function AddDirectGarmentsPage() {
                     <button
                       type="button"
                       key={party.id}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         setFormData({ ...formData, party_id: party.id })
                         setSearchQuery(party.name)
@@ -448,7 +449,7 @@ export default function AddDirectGarmentsPage() {
                   {productStocks
                     .filter(p => p.product_type.toLowerCase().includes(productSearchQuery.toLowerCase()))
                     .map(stock => (
-                      <button type="button" key={stock.product_type} onClick={() => {
+                      <button type="button" key={stock.product_type} onMouseDown={(e) => e.preventDefault()} onClick={() => {
                         setFormData({ ...formData, product_type: stock.product_type })
                         setProductSearchQuery(stock.product_type)
                         setShowProductDropdown(false)
@@ -458,7 +459,7 @@ export default function AddDirectGarmentsPage() {
                       </button>
                     ))}
                   {productSearchQuery.trim() && !productStocks.some(p => p.product_type.toLowerCase() === productSearchQuery.toLowerCase()) && (
-                    <button type="button" onClick={() => {
+                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => {
                       const newProduct = productSearchQuery.trim()
                       const capitalizedNewProduct = newProduct.charAt(0).toUpperCase() + newProduct.slice(1).toLowerCase()
                       setFormData({ ...formData, product_type: capitalizedNewProduct })

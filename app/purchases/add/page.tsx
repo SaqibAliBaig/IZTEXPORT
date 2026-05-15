@@ -348,6 +348,7 @@ export default function AddPurchasePage() {
                     <button
                       type="button"
                       key={supplier.id}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         setFormData({ ...formData, supplier_id: supplier.id })
                         setSearchQuery(supplier.name)
@@ -363,6 +364,7 @@ export default function AddPurchasePage() {
                 {searchQuery.trim() && !suppliers.some(s => s.name.toLowerCase().trim() === searchQuery.trim().toLowerCase()) && (
                   <button
                     type="button"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
                       setIsNewSupplier(true)
                       setNewSupplierName(searchQuery.trim())
