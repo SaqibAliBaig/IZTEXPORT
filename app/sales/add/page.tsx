@@ -240,7 +240,7 @@ export default function AddSalePage() {
         related_type: 'sale',
         related_id: sale.id,
         entry_date: formData.sale_date,
-        note: `Sale: ${quantity} ${formData.product_type} @ ₹${rate} each`
+        note: `Product: ${formData.product_type}${formData.note ? ` - ${formData.note}` : ''}\nSale: ${quantity} x ₹${rate}/piece = ₹${totalAmount.toLocaleString('en-IN')}`
       })
 
     // If payment made, record it

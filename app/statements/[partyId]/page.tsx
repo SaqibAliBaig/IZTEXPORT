@@ -576,7 +576,7 @@ export default function PartyStatementPage() {
           related_type: 'sale',
           related_id: sale.id,
           entry_date: saleFormData.sale_date,
-          note: `Sale: ${quantity} ${saleFormData.product_type} x ₹${rate}/piece${saleFormData.note ? ` - ${saleFormData.note}` : ''}`
+          note: `Product: ${saleFormData.product_type}${saleFormData.note ? ` - ${saleFormData.note}` : ''}\nSale: ${quantity} x ₹${rate}/piece = ₹${totalAmount.toLocaleString('en-IN')}`
         })
         .select()
         .single()
@@ -1074,7 +1074,7 @@ export default function PartyStatementPage() {
       'Production:', 'Purchase:', 'Sale:', 'Direct Garments:',
       'Payment for sale:', 'Payment received for sale:', 
       'Payment for production:', 'Payment for purchase:', 'Payment for cloth purchase:',
-      'Payment for direct garments:'
+      'Payment for direct garments:', 'Product:'
     ];
 
     for (const prefix of prefixes) {
@@ -1275,7 +1275,7 @@ export default function PartyStatementPage() {
                       )}
                       <tr className="border-b border-gray-100 last:border-0 hover:bg-gray-50 group">
                     <td className="p-3 whitespace-nowrap text-sm">
-                      {formatSafeDate(row.entry_date)}
+                      {formatSafeDate(row.created_at)}
                     </td>
                     <td className="p-3">
                       <p className="font-semibold text-gray-900 capitalize">
@@ -1283,6 +1283,9 @@ export default function PartyStatementPage() {
                       </p>
                       {cleanedNote && cleanedNote.split('\n')[0].toLowerCase() !== (row.related_type === 'adjustment' ? 'payment' : row.related_type || '').toLowerCase() && (
                         <p className="text-sm text-gray-500 line-clamp-2" title={cleanedNote.split('\n')[0]}>{renderNote(cleanedNote.split('\n')[0])}</p>
+                      )}
+                      {cleanedNote && cleanedNote.includes('\n') && (
+                        <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap font-medium">{cleanedNote.substring(cleanedNote.indexOf('\n') + 1)}</p>
                       )}
                       {row.payment_mode && (
                         <div className="mt-1">
@@ -1304,9 +1307,6 @@ export default function PartyStatementPage() {
                             (Old-Balance) {formatBalance(row.oldBalance)} - ₹{paymentAmount.toLocaleString('en-IN')} = {formatBalance(row.balance)}
                           </p>
                         </div>
-                      )}
-                      {cleanedNote && cleanedNote.includes('\n') && (
-                        <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap font-medium">{cleanedNote.substring(cleanedNote.indexOf('\n') + 1)}</p>
                       )}
                       <p className="text-[11px] text-gray-500 mt-1.5 font-medium flex items-center gap-1">
                         <Calendar className="w-3 h-3" /> Date: {formatSafeDate(row.entry_date)}
