@@ -442,7 +442,7 @@ export default function AddSalePage() {
                 onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                 className="w-full px-3 py-3 border rounded-lg focus:ring-2 focus:ring-black outline-none"
               />
-              {formData.product_type && (
+              {formData.product_type && productStocks.some(p => p.product_type.toLowerCase() === formData.product_type.toLowerCase()) && (
                 <div className="flex justify-between items-center mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-md border">
                   <span>In Stock: <span className="font-bold text-gray-800">{availableStock}</span></span>
                   {quantity > 0 && (

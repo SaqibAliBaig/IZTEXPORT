@@ -426,8 +426,8 @@ export default function StockPage() {
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-lg sm:text-xl font-bold text-red-600">
-                      -{sale.quantity.toLocaleString('en-IN')}
+                    <p className="text-lg sm:text-xl font-bold text-green-600">
+                      +{Math.abs(sale.quantity).toLocaleString('en-IN')}
                     </p>
                     <div className="flex items-center justify-end gap-1 mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-400">
                       <span>{new Date(sale.date).toLocaleDateString()}</span>
